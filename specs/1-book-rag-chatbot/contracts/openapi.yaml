@@ -1,0 +1,365 @@
+openapi: 3.0.0
+info:
+  title: Physical AI & Humanoid Robotics Book API
+  description: API for the Physical AI & Humanoid Robotics technical book with integrated RAG chatbot
+  version: 1.0.0
+servers:
+  - url: https://api.book-physical-ai-humanoid-robotics.com
+    description: Production server
+  - url: https://staging-api.book-physical-ai-humanoid-robotics.com
+    description: Staging server
+
+paths:
+  /ask-general:
+    post:
+      summary: Ask a general question about the book content
+      description: Submit a question to the RAG chatbot to get an answer based on the book content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - question
+              properties:
+                question:
+                  type: string
+                  description: The question to ask about the book content
+                  example: "Explain the difference between ROS 2 nodes and topics"
+                user_id:
+                  type: string
+                  description: Optional user ID for logged-in users
+                  example: "user-12345"
+      responses:
+        '200':
+          description: Successful response with the answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                    description: The answer to the question
+                    example: "ROS 2 nodes are processes that perform computation, while topics are named buses over which nodes exchange messages..."
+                  source_chunks:
+                    type: array
+                    items:
+                      type: string
+                    description: IDs of content chunks used to generate the answer
+                    example: ["chunk-1", "chunk-2"]
+                  confidence_score:
+                    type: number
+                    format: float
+                    minimum: 0.0
+                    maximum: 1.0
+                    description: Confidence score of the answer
+                    example: 0.92
+        '400':
+          description: Bad request due to invalid input
+        '429':
+          description: Rate limit exceeded (max 50 requests per hour per user)
+  
+  /ask-selected:
+    post:
+      summary: Ask a question about selected text
+      description: Submit a question about specific text selected in the book
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - question
+                - selected_text
+              properties:
+                question:
+                  type: string
+                  description: The question about the selected text
+                  example: "Can you elaborate on this concept?"
+                selected_text:
+                  type: string
+                  description: The text that was selected by the user
+                  example: "ROS 2 nodes are processes that perform computation..."
+                user_id:
+                  type: string
+                  description: Optional user ID for logged-in users
+                  example: "user-12345"
+      responses:
+        '200':
+          description: Successful response with the answer focused on the selected text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                    description: The answer to the question based on the selected text
+                    example: "The concept refers to processes that perform computation in ROS 2..."
+                  source_chunks:
+                    type: array
+                    items:
+                      type: string
+                    description: IDs of content chunks used to generate the answer
+                    example: ["chunk-1"]
+                  confidence_score:
+                    type: number
+                    format: float
+                    minimum: 0.0
+                    maximum: 1.0
+                    description: Confidence score of the answer
+                    example: 0.85
+        '400':
+          description: Bad request due to invalid input
+        '429':
+          description: Rate limit exceeded (max 50 requests per hour per user)
+
+  /embed-chunk:
+    post:
+      summary: Embed a content chunk for RAG functionality
+      description: Submit a content chunk to be embedded and stored in the vector database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+                - metadata
+              properties:
+                content:
+                  type: string
+                  description: The content to embed
+                  example: "In ROS 2, nodes are processes that perform computation..."
+                metadata:
+                  type: object
+                  description: Metadata about the content chunk
+                  properties:
+                    chapter_id:
+                      type: string
+                      example: "ch1-ros-intro"
+                    module_id:
+                      type: string
+                      example: "mod1-ros"
+                    section_title:
+                      type: string
+                      example: "Introduction to ROS 2 Nodes"
+                    word_count:
+                      type: integer
+                      example: 250
+      responses:
+        '200':
+          description: Content chunk successfully embedded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunk_id:
+                    type: string
+                    description: The ID of the embedded chunk
+                    example: "chunk-1"
+                  embedding_status:
+                    type: string
+                    description: Status of the embedding operation
+                    example: "success"
+        '400':
+          description: Bad request due to invalid input
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      description: Create a new user account with BetterAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: "student@example.com"
+                password:
+                  type: string
+                  minLength: 8
+                  description: User's password
+                  example: "securePassword123"
+                username:
+                  type: string
+                  description: Optional username
+                  example: "robotics_student"
+                background:
+                  type: string
+                  enum: [beginner, intermediate, advanced]
+                  description: User's background level
+                  example: "beginner"
+                hardware_level:
+                  type: string
+                  enum: [simulator-only, basic-hardware, advanced-hardware]
+                  description: User's hardware level
+                  example: "simulator-only"
+      responses:
+        '201':
+          description: User successfully registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    description: The ID of the newly created user
+                    example: "user-12345"
+                  message:
+                    type: string
+                    description: Success message
+                    example: "User registered successfully"
+        '400':
+          description: Bad request due to invalid input or email already exists
+
+  /auth/login:
+    post:
+      summary: Login a user
+      description: Authenticate a user and return session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: "student@example.com"
+                password:
+                  type: string
+                  description: User's password
+                  example: "securePassword123"
+      responses:
+        '200':
+          description: User successfully logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Authentication token
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user_id:
+                    type: string
+                    description: The ID of the logged-in user
+                    example: "user-12345"
+                  message:
+                    type: string
+                    description: Success message
+                    example: "Login successful"
+        '401':
+          description: Unauthorized due to invalid credentials
+
+  /personalize-content:
+    post:
+      summary: Get personalized content based on user profile
+      description: Retrieve book content tailored to the user's background and preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  description: The ID of the user requesting personalized content
+                  example: "user-12345"
+                module_id:
+                  type: string
+                  description: The ID of the module for which to retrieve personalized content
+                  example: "mod1-ros"
+                chapter_id:
+                  type: string
+                  description: Optional chapter ID for more specific personalization
+                  example: "ch1-ros-intro"
+      responses:
+        '200':
+          description: Personalized content retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  personalized_content:
+                    type: string
+                    description: The personalized content
+                    example: "Based on your beginner level, we've included additional explanations..."
+                  user_preferences:
+                    type: object
+                    description: The user's preferences that were used for personalization
+                    example: {"experience_level": "beginner", "preferred_hardware_examples": "simulator"}
+        '401':
+          description: Unauthorized due to invalid token
+        '400':
+          description: Bad request due to invalid input
+
+  /translate-urdu:
+    post:
+      summary: Translate content to Urdu
+      description: Convert book content to Urdu language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  description: The content to translate
+                  example: "In ROS 2, nodes are processes that perform computation..."
+                preserve_formatting:
+                  type: boolean
+                  description: Whether to preserve original formatting in translation
+                  default: true
+      responses:
+        '200':
+          description: Content translated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  translated_content:
+                    type: string
+                    description: The Urdu translation of the content
+                    example: "ROS 2 میں، نوڈس وہ عمل ہیں جو حساب کتاب انجام دیتے ہیں..."
+        '400':
+          description: Bad request due to invalid input
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

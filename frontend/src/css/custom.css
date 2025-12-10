@@ -1,0 +1,82 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #005a8c; /* A blue tone representing technology */
+  --ifm-color-primary-dark: #004a73;
+  --ifm-color-primary-darker: #003f63;
+  --ifm-color-primary-darkest: #003352;
+  --ifm-color-primary-light: #006ab6;
+  --ifm-color-primary-lighter: #0072c6;
+  --ifm-color-primary-lightest: #007cd6;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 90, 140, 0.1);
+
+  /* Additional custom colors for the book */
+  --ifm-color-secondary: #d17e21; /* An orange tone for highlights */
+  --ifm-color-success: #00a15b; /* Green for success/checkmarks */
+  --ifm-color-info: #00b8d4; /* Light blue for information */
+  --ifm-color-warning: #ffc107; /* Yellow for warnings */
+  --ifm-color-danger: #f44336; /* Red for errors/dangers */
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #4da6ff;
+  --ifm-color-primary-dark: #3399ff;
+  --ifm-color-primary-darker: #1a8cff;
+  --ifm-color-primary-darkest: #007fff;
+  --ifm-color-primary-light: #66b3ff;
+  --ifm-color-primary-lighter: #80c0ff;
+  --ifm-color-primary-lightest: #99cdff;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 100, 150, 0.3);
+
+  /* Dark mode specific colors */
+  --ifm-color-secondary: #ff9e40;
+  --ifm-color-success: #00c853;
+  --ifm-color-info: #18ffff;
+  --ifm-color-warning: #ffd600;
+  --ifm-color-danger: #ff5252;
+}
+
+/* Custom styling for the robotics book */
+.hero--primary {
+  background-color: #003352;
+  background-image: linear-gradient(135deg, #003352 0%, #005a8c 100%);
+}
+
+/* Style for code blocks specific to robotics */
+.robo-code-block {
+  background-color: #2d2d2d;
+  border-left: 4px solid #00a15b;
+}
+
+/* Style for exercise blocks */
+.exercise-block {
+  border: 2px solid var(--ifm-color-secondary);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  background-color: rgba(209, 126, 33, 0.05);
+}
+
+/* Style for summary/checklist blocks */
+.checklist-block {
+  border: 2px solid var(--ifm-color-success);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  background-color: rgba(0, 161, 91, 0.05);
+}
+
+/* Custom styling for the chatbot widget */
+.chat-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
