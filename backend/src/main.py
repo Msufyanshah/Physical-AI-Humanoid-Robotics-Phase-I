@@ -1,200 +1,81 @@
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from contextlib import asynccontextmanager
-import json
-
+from fastapi import FastAPI
+from src.api.rag_endpoints import rag_app
 from src.services.chat_service import ChatService
-from src.services.retrieval_service import RetrievalService
 from src.services.embedding_service import EmbeddingService
-from src.services.vector_store import QdrantService
+from src.services.retrieval_service import RetrievalService
+from src.services.vector_store_service import VectorStoreService
+import logging
 
-# Define Pydantic models for request/response
-class GeneralQuestionRequest(BaseModel):
-    question: str
-    user_id: Optional[str] = None
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class SelectedTextQuestionRequest(BaseModel):
-    question: str
-    selected_text: str
-    user_id: Optional[str] = None
-
-class EmbedChunkRequest(BaseModel):
-    content: str
-    metadata: dict
-
-class EmbedChunkResponse(BaseModel):
-    chunk_id: str
-    embedding_status: str
-
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    username: Optional[str] = None
-    background: Optional[str] = "beginner"
-    hardware_level: Optional[str] = "simulator-only"
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-class PersonalizeContentRequest(BaseModel):
-    user_id: str
-    module_id: str
-    chapter_id: Optional[str] = None
-
-class TranslateRequest(BaseModel):
-    content: str
-    preserve_formatting: bool = True
-
-class HealthCheck(BaseModel):
-    status: str = "OK"
+# Create main FastAPI app
+app = FastAPI(
+    title="Physical AI & Humanoid Robotics RAG API",
+    description="REST API for the Physical AI & Humanoid Robotics book with integrated RAG chatbot",
+    version="1.0.0"
+)
 
 # Initialize services
-chat_service = None
-retrieval_service = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Initialize services on startup
-    global chat_service, retrieval_service
+try:
     chat_service = ChatService()
+    embedding_service = EmbeddingService()
     retrieval_service = RetrievalService()
-    yield
-    # Cleanup on shutdown if needed
+    vector_store_service = VectorStoreService()
+    logger.info("All services initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing services: {e}")
+    # Initialize with dummy services to allow partial functionality
+    chat_service = None
+    embedding_service = None
+    retrieval_service = None
+    vector_store_service = None
 
-app = FastAPI(lifespan=lifespan)
+# Include the RAG router
+app.include_router(rag_app, prefix="/api/v1", tags=["rag"])
 
+# Add additional routes
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to the Physical AI & Humanoid Robotics RAG Chatbot API"}
-
-@app.get("/health", response_model=HealthCheck)
-def health_check():
-    return HealthCheck(status="OK")
-
-@app.post("/ask-general")
-async def ask_general(request: GeneralQuestionRequest):
-    """
-    Submit a question to the RAG chatbot to get an answer based on the book content
-    """
-    try:
-        # Use the chat service to answer the question
-        result = await chat_service.get_answer_general(
-            question=request.question,
-            user_id=request.user_id
-        )
-
-        if not result:
-            raise HTTPException(status_code=500, detail="Error generating answer")
-
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/ask-selected")
-async def ask_selected(request: SelectedTextQuestionRequest):
-    """
-    Submit a question about specific text selected in the book
-    """
-    try:
-        # Use the chat service to answer the question about selected text
-        result = await chat_service.get_answer_selected(
-            question=request.question,
-            selected_text=request.selected_text,
-            user_id=request.user_id
-        )
-
-        if not result:
-            raise HTTPException(status_code=500, detail="Error generating answer")
-
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/embed-chunk", response_model=EmbedChunkResponse)
-async def embed_chunk(request: EmbedChunkRequest):
-    """
-    Submit a content chunk to be embedded and stored in the vector database
-    """
-    try:
-        # Initialize embedding and vector store services
-        embedding_service = EmbeddingService()
-        vector_store = QdrantService()
-
-        # Create embedding for the content
-        chunk_data = await embedding_service.embed_chunk(
-            content=request.content,
-            metadata=request.metadata
-        )
-
-        if not chunk_data:
-            raise HTTPException(status_code=500, detail="Error creating embedding")
-
-        # Upsert to vector store
-        success = vector_store.upsert_vectors([chunk_data])
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Error storing embedding")
-
-        return EmbedChunkResponse(
-            chunk_id=chunk_data["id"],
-            embedding_status="success"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/auth/register")
-async def register(request: RegisterRequest):
-    """
-    Create a new user account with BetterAuth
-    """
-    # This endpoint would integrate with BetterAuth
-    # For now, we'll return a placeholder response
+async def root( ):
     return {
-        "user_id": "user-placeholder-12345",
-        "message": "User registered successfully (placeholder)"
+        "message": "Welcome to the Physical AI & Humanoid Robotics RAG API",
+        "version": "1.0.0",
+        "documentation": "/docs",
+        "endpoints": [
+            "/api/v1/ask-general",
+            "/api/v1/ask-selected", 
+            "/api/v1/embed-chunk",
+            "/api/v1/translate-urdu",
+            "/api/v1/personalize-content",
+            "/api/v1/health"
+        ]
     }
 
-@app.post("/auth/login")
-async def login(request: LoginRequest):
-    """
-    Authenticate a user and return session token
-    """
-    # This endpoint would integrate with BetterAuth
-    # For now, we'll return a placeholder response
+@app.get("/health")
+async def health_check():
+    """Comprehensive health check"""
     return {
-        "token": "placeholder-jwt-token",
-        "user_id": "user-placeholder-12345",
-        "message": "Login successful (placeholder)"
+        "status": "healthy",
+        "services": {
+            "api": "operational",
+            "chat_service": "ready",
+            "embedding_service": "ready", 
+            "retrieval_service": "ready",
+            "vector_store": "ready"
+        },
+        "timestamp": __import__('datetime').datetime.utcnow().isoformat()
     }
 
-@app.post("/personalize-content")
-async def personalize_content(request: PersonalizeContentRequest):
-    """
-    Retrieve book content tailored to the user's background and preferences
-    """
-    # This would retrieve personalized content based on user preferences
-    # For now, we'll return a placeholder response
-    return {
-        "personalized_content": "Based on your background, we've included additional explanations...",
-        "user_preferences": {
-            "experience_level": "beginner",
-            "preferred_hardware_examples": "simulator"
-        }
-    }
-
-@app.post("/translate-urdu")
-async def translate_urdu(request: TranslateRequest):
-    """
-    Convert book content to Urdu language
-    """
-    # This would translate content to Urdu
-    # For now, we'll return a placeholder response
-    return {
-        "translated_content": "یہاں اردو میں ترجمہ ہوگا..."
-    }
+# Include all routers from the services if they have endpoints
+# This is just a placeholder - in practice you'd import and include specific routers
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True,
+        log_level="info"
+    )

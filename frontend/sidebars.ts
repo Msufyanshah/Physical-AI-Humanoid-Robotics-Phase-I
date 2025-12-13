@@ -59,6 +59,7 @@ const sidebars: SidebarsConfig = {
             'module4/ch12-voice-action-pipelines',
             'module4/ch13-cognitive-planning',
             'module4/ch14-capstone-autonomous-humanoid',
+            'module4/ch15-course-conclusion',
             'module4/exercise-set4'
           ],
         }
