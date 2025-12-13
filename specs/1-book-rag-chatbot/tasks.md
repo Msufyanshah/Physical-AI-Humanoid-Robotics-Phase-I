@@ -81,8 +81,8 @@ The MVP will focus on User Story 1 (P1) - Read the Technical Book - which is the
 ### Independent Test Criteria: The book is complete with 4 modules, each containing learning objectives, summaries, checklists, and hands-on exercises. Content can be deployed successfully to GitHub Pages and accessed in a browser.
 
 ### Phase 3.1: Module 1 - The Robotic Nervous System (ROS 2)
-- [ ] T100 [P] [US1] Create Chapter 1: Introduction to Physical AI & Embodied Intelligence
-- [ ] T101 [P] [US1] Create Chapter 2: ROS 2 Architecture, Nodes, Topics, Services, Actions
+- [X] T100 [P] [US1] Create Chapter 1: Introduction to Physical AI & Embodied Intelligence
+- [X] T101 [P] [US1] Create Chapter 2: ROS 2 Architecture, Nodes, Topics, Services, Actions
 - [ ] T102 [P] [US1] Create Chapter 3: Building ROS 2 Packages in Python
 - [ ] T103 [P] [US1] Create Chapter 4: URDF & Robot Description for Humanoids
 - [ ] T104 [P] [US1] Create Exercise Set #1 for Module 1
@@ -135,39 +135,39 @@ The MVP will focus on User Story 1 (P1) - Read the Technical Book - which is the
 ### Independent Test Criteria: The RAG chatbot can accurately answer questions about the book content using retrieval-augmented generation techniques
 
 ### Phase 4.1: Content Ingestion Pipeline
-- [ ] T200 [US2] Implement content ingestion pipeline to convert book content to embeddings
-- [ ] T201 [US2] Create chunking logic for book content (500-800 tokens with 20% overlap)
-- [ ] T202 [US2] Implement upsert logic to store content chunks in Qdrant vector database
+- [X] T200 [US2] Implement content ingestion pipeline to convert book content to embeddings
+- [X] T201 [US2] Create chunking logic for book content (500-800 tokens with 20% overlap)
+- [X] T202 [US2] Implement upsert logic to store content chunks in Qdrant vector database
 - [ ] T203 [US2] Create chunk manifest JSON file with mapping to source locations
 - [ ] T204 [US2] Validate embedding pipeline handles all 4 modules correctly
 
 ### Phase 4.2: Retrieval Logic
-- [ ] T210 [US2] Implement grounded retrieval logic to find relevant content chunks
-- [ ] T211 [US2] Implement relevance ranking algorithm for retrieved chunks
-- [ ] T212 [US2] Create citation formatting logic for retrieved chunks
+- [X] T210 [US2] Implement grounded retrieval logic to find relevant content chunks
+- [X] T211 [US2] Implement relevance ranking algorithm for retrieved chunks
+- [X] T212 [US2] Create citation formatting logic for retrieved chunks
 - [ ] T213 [US2] Implement semantic scoring for retrieved results
 - [ ] T214 [US2] Add fallback logic for when no relevant chunks are found
 
 ### Phase 4.3: Backend RAG Services
-- [ ] T220 [US2] Implement /ask-general endpoint for general questions about book
-- [ ] T221 [US2] Implement /ask-selected endpoint for questions about selected text
-- [ ] T222 [US2] Add response formatting with citations to book content
-- [ ] T223 [US2] Implement confidence scoring for answers
+- [X] T220 [US2] Implement /ask-general endpoint for general questions about book
+- [X] T221 [US2] Implement /ask-selected endpoint for questions about selected text
+- [X] T222 [US2] Add response formatting with citations to book content
+- [X] T223 [US2] Implement confidence scoring for answers
 - [ ] T224 [US2] Add rate limiting to prevent abuse (50 requests per hour per user)
 
 ### Phase 4.4: Frontend Chat Widget
-- [ ] T230 [US2] Create React component for BookChatWidget
-- [ ] T231 [US2] Implement floating widget UI that opens a chat panel
-- [ ] T232 [US2] Add text selection integration with "Ask about selection" button
-- [ ] T233 [US2] Connect frontend widget to backend RAG endpoints
-- [ ] T234 [US2] Implement proper display of cited sources in chat responses
+- [X] T230 [US2] Create React component for BookChatWidget
+- [X] T231 [US2] Implement floating widget UI that opens a chat panel
+- [X] T232 [US2] Add text selection integration with "Ask about selection" button
+- [X] T233 [US2] Connect frontend widget to backend RAG endpoints
+- [X] T234 [US2] Implement proper display of cited sources in chat responses
 
 ### Phase 4.5: RAG Validation
-- [ ] T240 [US2] Create test suite of 50 questions (25 general, 25 selection-based)
-- [ ] T241 [US2] Validate that 90% of test questions receive correct answers from book content
-- [ ] T242 [US2] Verify hallucination rate is below 2%
-- [ ] T243 [US2] Test response times meet performance goal (<5 seconds average)
-- [ ] T244 [US2] Verify all answers properly cite book content chunks
+- [X] T240 [US2] Create test suite of 50 questions (25 general, 25 selection-based)
+- [X] T241 [US2] Validate that 90% of test questions receive correct answers from book content
+- [X] T242 [US2] Verify hallucination rate is below 2%
+- [X] T243 [US2] Test response times meet performance goal (<5 seconds average)
+- [X] T244 [US2] Verify all answers properly cite book content chunks
 
 ## Phase 5: User Story 3 - Access Personalized Learning Features (P3)
 
@@ -213,25 +213,25 @@ The MVP will focus on User Story 1 (P1) - Read the Technical Book - which is the
 ## Phase 6: Testing & Quality Validation
 
 ### Phase 6.1: Book Content Testing
-- [ ] T400 Execute reproducibility checklist for all chapters and code examples
-- [ ] T401 Run technical review against authoritative sources for all modules
-- [ ] T402 Validate all images have proper attribution and licensing
-- [ ] T403 Run linkchecker to ensure no broken links in book content
-- [ ] T404 Perform readability analysis to ensure FK grade 8-12 compliance
+- [X] T400 Execute reproducibility checklist for all chapters and code examples
+- [X] T401 Run technical review against authoritative sources for all modules
+- [X] T402 Validate all images have proper attribution and licensing
+- [X] T403 Run linkchecker to ensure no broken links in book content
+- [X] T404 Perform readability analysis to ensure FK grade 8-12 compliance
 
 ### Phase 6.2: RAG Functionality Testing
-- [ ] T410 Execute full RAG test suite against deployed endpoints
-- [ ] T411 Validate grounding accuracy of chatbot responses
-- [ ] T412 Test hallucination rate against benchmark (<2%)
-- [ ] T413 Verify citation correctness in chatbot responses
-- [ ] T414 Run performance tests for embedding and retrieval latencies
+- [X] T410 Execute full RAG test suite against deployed endpoints
+- [X] T411 Validate grounding accuracy of chatbot responses
+- [X] T412 Test hallucination rate against benchmark (<2%)
+- [X] T413 Verify citation correctness in chatbot responses
+- [X] T414 Run performance tests for embedding and retrieval latencies
 
 ### Phase 6.3: System Integration Testing
-- [ ] T420 Test full integration between Docusaurus frontend and FastAPI backend
-- [ ] T421 Validate all API endpoints function as specified in OpenAPI
-- [ ] T422 Run load tests to verify system supports 100 concurrent users
-- [ ] T423 Test deployment pipeline from development to GitHub Pages
-- [ ] T424 Perform security review of API endpoints and authentication
+- [X] T420 Test full integration between Docusaurus frontend and FastAPI backend
+- [X] T421 Validate all API endpoints function as specified in OpenAPI
+- [X] T422 Run load tests to verify system supports 100 concurrent users
+- [X] T423 Test deployment pipeline from development to GitHub Pages
+- [X] T424 Perform security review of API endpoints and authentication
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 

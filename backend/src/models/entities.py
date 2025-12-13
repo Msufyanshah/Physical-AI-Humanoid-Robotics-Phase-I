@@ -150,7 +150,7 @@ class PersonalizationSettings(BaseModel):
     experience_level: ExperienceLevel
     favorite_topics: List[str]
     learning_pace: LearningPace
-    notification_preferences: dict  # email, push, etc.
+    notification_preferences: dict   # email, push, etc.
 
 class ImageMedia(BaseModel):
     """

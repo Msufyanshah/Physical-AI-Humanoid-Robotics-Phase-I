@@ -1,7 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean # type: ignore
+from sqlalchemy.types import Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 Base = declarative_base()
@@ -50,8 +51,8 @@ class UserDB(Base):
     background = Column(String(20))  # beginner, intermediate, advanced
     hardware_level = Column(String(30))  # simulator-only, basic-hardware, advanced-hardware
     preferred_language = Column(String(5), default="en")  # Also supports "ur" for Urdu
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     questions = relationship("QuestionDB", back_populates="user")
@@ -67,7 +68,7 @@ class QuestionDB(Base):
     question_type = Column(String(20), nullable=False)  # general, selected_text
     selected_text = Column(Text)  # Required if question type is "selected_text"
     book_section_id = Column(String)  # To track which section user was reading
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("UserDB", back_populates="questions")
@@ -81,7 +82,7 @@ class AnswerDB(Base):
     answer_text = Column(Text, nullable=False)
     source_chunks = Column(Text)  # JSON string of IDs of content chunks used
     confidence_score = Column(Float)  # 0.0-1.0
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     question = relationship("QuestionDB", back_populates="answer")
@@ -123,7 +124,7 @@ class ChatLogDB(Base):
     user_id = Column(String, ForeignKey('users.id'))  # Optional for anonymous
     question_id = Column(String, ForeignKey('questions.id'), nullable=False)
     answer_id = Column(String, ForeignKey('answers.id'), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     session_id = Column(String)  # To group related questions
     
     # Relationships
