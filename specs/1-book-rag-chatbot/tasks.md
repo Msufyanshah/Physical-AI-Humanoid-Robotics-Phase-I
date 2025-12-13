@@ -39,10 +39,10 @@ The MVP will focus on User Story 1 (P1) - Read the Technical Book - which is the
 
 ### Phase 1.1: Project Bootstrap
 - [X] T001 Create project structure per plan with backend/, frontend/ directories
-- [ ] T002 Initialize Git repository and set up branch protection rules
-- [ ] T003 Set up GitHub issue templates for feature, bug, task, review-request
+- [X] T002 Initialize Git repository and set up branch protection rules
+- [X] T003 Set up GitHub issue templates for feature, bug, task, review-request
 - [X] T004 Create environment variable templates (env.example) for API keys
-- [ ] T005 Set up CI/CD workflow templates (lint, test, deploy)
+- [X] T005 Set up CI/CD workflow templates (lint, test, deploy)
 
 ## Phase 2: Foundational Tasks
 
