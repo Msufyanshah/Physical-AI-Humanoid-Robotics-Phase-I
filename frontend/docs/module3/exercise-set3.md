@@ -1,6 +1,6 @@
 ---
 title: 'Exercise Set 3 - The AI-Robot Brain (NVIDIA Isaac)'
-description: 'Hands-on exercises for Module 3 on Isaac Sim, perception, and AI planning'
+description: 'Hands-on exercises for Module 3 - Isaac Sim, perception, and AI planning'
 ---
 
 # Exercise Set 3: The AI-Robot Brain (NVIDIA Isaac)
@@ -8,887 +8,754 @@ description: 'Hands-on exercises for Module 3 on Isaac Sim, perception, and AI p
 ## Learning Objectives
 
 After completing these exercises, you will be able to:
-- Configure and run NVIDIA Isaac Sim for complex robotics scenarios
-- Implement perception systems combining vision and robotics
-- Apply AI techniques for robot manipulation and locomotion planning
-- Integrate sensing, planning, and control in a complete robotic system
-- Evaluate and validate AI-powered robotic behaviors
-- Optimize simulation and real-time performance
+- Configure and use Isaac Sim for humanoid robot simulation
+- Implement perception systems that integrate vision and other sensors
+- Design AI-powered manipulation and planning systems
+- Create integrated perception-action loops for humanoid tasks
+- Evaluate and optimize AI-based robot behaviors
+- Develop and test cognitive planning algorithms
+- Validate sensor simulation accuracy and effectiveness
+- Troubleshoot complex integrated robot systems
 
-## Exercise 1: Isaac Sim Scene Creation with Perception Sensors
+## Exercise 1: Isaac Sim Environment with Complex Scenarios
 
-Create an Isaac Sim scene with realistic lighting, textures, and a robot equipped with RGB and depth cameras, then generate synthetic data.
+Create a complex simulation environment in Isaac Sim with multiple objects and realistic physics for humanoid robot tasks.
 
 ### Instructions
 
-1. Create a new Isaac Sim scene containing:
-   - A humanoid robot (use existing model or create simple one)
-   - Furniture and objects for manipulation
+1. Create an Isaac Sim world with:
+   - Multiple rooms with different flooring materials
+   - Various objects with different physical properties
+   - Humanoid-friendly furniture (tables at appropriate heights)
    - Dynamic lighting conditions
+   - Multiple levels (stairs or ramps)
 
-2. Add perception sensors to the robot:
-   - RGB camera with 640x480 resolution
-   - Depth camera with appropriate parameters
-   - IMU sensor
+2. Configure the physics parameters appropriately for humanoid robot dynamics.
 
-3. Implement a data capture pipeline that:
-   - Captures synchronized RGB and depth images
-   - Records pose information for each frame
-   - Saves data in standard formats
+3. Implement collision detection and response for different surface types.
 
-4. Add scene randomization to increase data diversity
+4. Verify that the simulation is stable and realistic for humanoid operation.
 
 ### Solution
 
-First, create the scene setup script (scene_setup.py):
+#### 1. Create the Isaac Sim scene with USD files
 
 ```python
+# isaac_sim_setup.py
 import omni
 from omni.isaac.core import World
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.nucleus import get_assets_root_path
-from omni.isaac.core.utils.prims import get_prim_at_path, create_primitive
+from omni.isaac.core.utils.prims import create_primitive
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
-from omni.isaac.sensor import Camera
-import carb
 import numpy as np
-import cv2
-import os
 
 
-class IsaacSimScene:
-    def __init__(self):
-        self.world = World(stage_units_in_meters=1.0)
-        self.camera = None
-        self.depth_camera = None
-        
-        # Get assets root
-        self.assets_root = get_assets_root_path()
-        if self.assets_root is None:
-            carb.log_error("Could not find Isaac Sim assets path")
-            return
-            
-    def create_environment(self):
-        """Create a indoor environment with furniture"""
-        # Create ground plane
+def create_complex_humanoid_environment():
+    """
+    Create a complex environment with multiple rooms and objects
+    for humanoid robot training and testing
+    """
+    
+    # Get the world instance
+    world = World(stage_units_in_meters=1.0)
+    
+    # Get assets root for standard models
+    assets_root = get_assets_root_path()
+    
+    # Create the environment
+    create_rooms_with_doors()
+    create_furniture()
+    create_objects_with_various_materials()
+    create_stairs_or_ramps()
+    create_lighting()
+    
+    # Configure physics
+    configure_physics_params()
+    
+    return world
+
+
+def create_rooms_with_doors():
+    """
+    Create multiple interconnected rooms with doors
+    """
+    room_size = 4.0  # 4m x 4m rooms
+    wall_thickness = 0.2
+    wall_height = 2.5
+    
+    # Create outer walls for main room
+    create_primitive(
+        prim_path="/World/main_room/north_wall",
+        prim_type="Cube",
+        position=np.array([0, room_size/2, wall_height/2]),
+        scale=np.array([room_size, wall_thickness, wall_height])
+    )
+    
+    create_primitive(
+        prim_path="/World/main_room/south_wall",
+        prim_type="Cube",
+        position=np.array([0, -room_size/2, wall_height/2]),
+        scale=np.array([room_size, wall_thickness, wall_height])
+    )
+    
+    create_primitive(
+        prim_path="/World/main_room/east_wall",
+        prim_type="Cube", 
+        position=np.array([room_size/2, 0, wall_height/2]),
+        scale=np.array([wall_thickness, room_size, wall_height])
+    )
+    
+    create_primitive(
+        prim_path="/World/main_room/west_wall",
+        prim_type="Cube",
+        position=np.array([-room_size/2, 0, wall_height/2]),
+        scale=np.array([wall_thickness, room_size, wall_height])
+    )
+    
+    # Create door opening in south wall
+    # (We'll place a door that can be opened/closed)
+    create_door(
+        position=np.array([0, -room_size/2, 1.0]),  # Centered on south wall, at human height
+        width=0.8,
+        height=2.0
+    )
+
+
+def create_furniture():
+    """
+    Create humanoid-friendly furniture
+    """
+    # Living room table
+    create_primitive(
+        prim_path="/World/furniture/living_room_table",
+        prim_type="Cylinder",
+        position=np.array([1.0, 0.5, 0.4]),
+        scale=np.array([0.6, 0.6, 0.8]),
+        color=np.array([0.6, 0.4, 0.2])
+    )
+    
+    # Kitchen counter (higher for humanoid manipulation practice)
+    create_primitive(
+        prim_path="/World/furniture/kitchen_counter",
+        prim_type="Cube",
+        position=np.array([-2.0, -1.0, 0.9]),
+        scale=np.array([1.5, 0.6, 1.8]),  # Counter height around 90-100cm for humanoid
+        color=np.array([0.8, 0.8, 0.8])
+    )
+    
+    # Chair for interaction practice
+    create_primitive(
+        prim_path="/World/furniture/chair",
+        prim_type="Cylinder",
+        position=np.array([1.5, 0.0, 0.25]),
+        scale=np.array([0.3, 0.3, 0.5]),
+        color=np.array([0.5, 0.5, 0.5])
+    )
+
+
+def create_objects_with_various_materials():
+    """
+    Create various objects with different physical properties
+    """
+    
+    # Different objects with unique properties
+    objects = [
+        # Wood block - medium mass, low friction
+        {
+            "name": "wood_block",
+            "position": np.array([1.0, 0.7, 0.45]),
+            "type": "Box",
+            "scale": np.array([0.1, 0.1, 0.1]),
+            "color": np.array([0.6, 0.4, 0.2]),
+            "mass": 0.2,
+            "friction": 0.3
+        },
+        # Metal cylinder - high mass, medium friction
+        {
+            "name": "metal_cylinder",
+            "position": np.array([1.2, 0.7, 0.45]),
+            "type": "Cylinder",
+            "scale": np.array([0.05, 0.05, 0.15]),
+            "color": np.array([0.5, 0.5, 0.7]),
+            "mass": 0.5,
+            "friction": 0.6
+        },
+        # Plastic sphere - low mass, high friction
+        {
+            "name": "plastic_sphere",
+            "position": np.array([1.4, 0.7, 0.45]),
+            "type": "Sphere",
+            "scale": np.array([0.05, 0.05, 0.05]),
+            "color": np.array([0.8, 0.2, 0.2]),
+            "mass": 0.1,
+            "friction": 0.8
+        },
+        # Paper box - very light, high friction
+        {
+            "name": "paper_box",
+            "position": np.array([1.1, 0.8, 0.5]),
+            "type": "Box",
+            "scale": np.array([0.1, 0.08, 0.05]),
+            "color": np.array([0.9, 0.9, 0.9]),
+            "mass": 0.05,
+            "friction": 0.9
+        }
+    ]
+    
+    for obj_data in objects:
         create_primitive(
-            prim_path="/World/ground",
-            primitive_props={"size": 10.0},
-            prim_type="Plane",
-            position=np.array([0, 0, 0]),
-            orientation=euler_angles_to_quat(np.array([0, 0, 0]))
+            prim_path=f"/World/objects/{obj_data['name']}",
+            prim_type=obj_data["type"],
+            position=obj_data["position"],
+            scale=obj_data["scale"],
+            color=obj_data["color"]
         )
         
-        # Load a simple robot onto the scene
-        robot_asset_path = self.assets_root + "/Isaac/Robots/Turtlebot/turtlebot3_standalone.usd"
-        add_reference_to_stage(usd_path=robot_asset_path, prim_path="/World/Robot")
-        
-        # Create a table
+        # Add specific properties like mass and friction would require more advanced prim configuration
+
+
+def create_stairs_or_ramps():
+    """
+    Create stairs or ramps to test humanoid locomotion
+    """
+    # Create a simple staircase
+    stair_height = 0.17  # 17cm typical stair height
+    stair_depth = 0.28   # 28cm typical stair depth
+    stair_width = 1.0    # 1m wide stairs
+    
+    for i in range(5):  # Create 5 steps
         create_primitive(
-            prim_path="/World/table",
-            primitive_props={"size": 0.8},
+            prim_path=f"/World/stairs/step_{i}",
             prim_type="Cube",
-            position=np.array([1.0, 0, 0.4]),
-            orientation=euler_angles_to_quat(np.array([0, 0, 0]))
+            position=np.array([0, -2.0 + i*stair_depth, i*stair_height]),
+            scale=np.array([stair_width, stair_depth, stair_height]),
+            color=np.array([0.4, 0.4, 0.4])
         )
-        
-        # Add objects on the table
-        for i in range(3):
-            color = [(i+1)%3, (i+2)%3, (i+3)%3]  # Different colors
-            create_primitive(
-                prim_path=f"/World/Object_{i}",
-                primitive_props={"radius": 0.1},
-                prim_type="Sphere",
-                position=np.array([1.0 - 0.2*i, 0.2, 0.55]),
-                orientation=euler_angles_to_quat(np.array([0, 0, 0])),
-                color=np.array(color)
-            )
-        
-        # Add lighting
-        create_primitive(
-            prim_path="/World/DomeLight",
-            prim_type="DomeLight",
-            position=np.array([0, 0, 0]),
-            attributes={"color": (0.75, 0.75, 0.75), "intensity": 3000}
-        )
-    
-    def setup_cameras(self):
-        """Add RGB and depth cameras to the robot"""
-        # Add RGB camera
-        self.camera = Camera(
-            prim_path="/World/Robot/base_link/camera",
-            frequency=30,
-            resolution=(640, 480)
-        )
-        
-        self.world.scene.add(self.camera)
-        
-        # Add depth camera (we'll use the same camera with depth attachment)
-        self.depth_camera = Camera(
-            prim_path="/World/Robot/base_link/depth_camera",
-            frequency=30,
-            resolution=(640, 480)
-        )
-        
-        self.world.scene.add(self.depth_camera)
-    
-    def capture_data(self, frame_number, output_dir="synthetic_data"):
-        """Capture synchronized RGB and depth data"""
-        # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Capture RGB image
-        rgb_data = self.camera.get_rgb()
-        rgb_filename = f"{output_dir}/rgb_{frame_number:04d}.png"
-        cv2.imwrite(rgb_filename, cv2.cvtColor(rgb_data, cv2.COLOR_RGB2BGR))
-        
-        # Capture depth data
-        depth_data = self.depth_camera.get_depth()
-        depth_filename = f"{output_dir}/depth_{frame_number:04d}.png"
-        
-        # Convert depth to 16-bit PNG for better precision
-        depth_scaled = (depth_data * 1000).astype(np.uint16)  # Scale to mm for better precision
-        cv2.imwrite(depth_filename, depth_scaled)
-        
-        # Get robot pose for this frame
-        robot = self.world.scene.get_object("Robot")
-        if robot:
-            position, orientation = robot.get_world_pose()
-            
-            # Save pose information
-            pose_filename = f"{output_dir}/pose_{frame_number:04d}.txt"
-            with open(pose_filename, 'w') as f:
-                f.write(f"position: {position[0]} {position[1]} {position[2]}\n")
-                f.write(f"orientation: {orientation[0]} {orientation[1]} {orientation[2]} {orientation[3]}\n")
-        
-        carb.log_info(f"Captured frame {frame_number:04d}")
-    
-    def run_simulation(self, num_frames=100):
-        """Run the simulation and capture data"""
-        self.world.reset()
-        
-        for i in range(num_frames):
-            # Step the world
-            self.world.step(render=True)
-            
-            # Periodically move robot to capture different views
-            if self.world.current_step_index % 100 == 0:
-                # Move robot forward slightly
-                robot = self.world.scene.get_object("Robot")
-                if robot:
-                    pos, ori = robot.get_world_pose()
-                    robot.set_world_pose(position=np.array([pos[0]+0.01, pos[1], pos[2]], dtype=np.float32))
-            
-            # Capture data every N steps
-            if self.world.current_step_index % 10 == 0:
-                self.capture_data(self.world.current_step_index // 10)
 
 
-# Usage
-def main():
-    # Initialize Isaac Sim
-    scene = IsaacSimScene()
+def create_lighting():
+    """
+    Create dynamic lighting in the environment
+    """
+    # Create dome light for ambient lighting
+    from omni.isaac.core.utils.prims import create_prim
     
-    # Setup the environment
-    scene.create_environment()
-    scene.setup_cameras()
+    create_prim(
+        prim_path="/World/Light/DomeLight",
+        prim_type="DomeLight",
+        position=np.array([0, 0, 10]),
+        attributes={"color": (0.8, 0.8, 0.8), "intensity": 3000}
+    )
     
-    # Run simulation and capture data
-    scene.run_simulation(num_frames=500)  # Run for 500 steps
+    # Add a few spotlights for more directed lighting
+    create_prim(
+        prim_path="/World/Light/SpotLight1",
+        prim_type="SpotLight",
+        position=np.array([2, 2, 3]),
+        attributes={"color": (1.0, 1.0, 1.0), "intensity": 1500}
+    )
+
+
+def configure_physics_params():
+    """
+    Configure physics parameters appropriate for humanoid simulation
+    """
+    # In Isaac Sim, we access the physics scene through the simulation context
+    omni.physx.acquire_physx_interface().get_physics_simulator().set_timestep(1.0/60.0)  # 60Hz physics
+
+
+def create_door(position, width, height):
+    """
+    Create a door that can be opened and closed
+    """
+    # Create door as a dynamic object with appropriate joint
+    door_path = "/World/door/main_door"
     
-    carb.log_info("Data capture completed!")
+    # Create door frame
+    create_primitive(
+        prim_path=door_path + "_frame",
+        prim_type="Cube",
+        position=position,
+        scale=np.array([width + 0.1, 0.1, height + 0.1]),
+        color=np.array([0.5, 0.3, 0.1])
+    )
+    
+    # Create door panel (rotating part)
+    door_panel_pos = position.copy()
+    door_panel_pos[1] += (width/2 + 0.05)  # Offset to attach to frame
+    
+    create_primitive(
+        prim_path=door_path + "_panel",
+        prim_type="Cube",
+        position=door_panel_pos,
+        scale=np.array([width, 0.05, height]),
+        color=np.array([0.6, 0.4, 0.2])
+    )
+
+
+# Run the environment creation
+if __name__ == "__main__":
+    world = create_complex_humanoid_environment()
+    print("Complex humanoid environment created successfully!")
+    
+    # Reset the world to initialize physics
+    world.reset()
+    
+    # Run the simulation for a few steps
+    for i in range(100):
+        world.step(render=True)
+        if i % 50 == 0:
+            print(f"Simulation step: {i}")
+    
+    print("Environment validation completed!")
+```
+
+#### 2. Validate Physics Parameters
+
+```python
+# physics_validator.py
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+from typing import Dict, Any, List
+
+
+class PhysicsValidator:
+    """
+    Validates physics parameters for humanoid robot simulation
+    """
+    
+    def __init__(self):
+        self.validation_checks = [
+            self.check_gravity_setting,
+            self.check_robot_mass_settings,
+            self.check_collision_properties,
+            self.check_friction_coefficients,
+            self.check_joint_limits,
+            self.check_balance_stability
+        ]
+    
+    def check_gravity_setting(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check that gravity is correctly set
+        """
+        expected_gravity = np.array([0, 0, -9.81])
+        actual_gravity = world_state.get('gravity', np.array([0, 0, 0]))
+        
+        gravity_match = np.allclose(actual_gravity, expected_gravity, atol=0.01)
+        
+        return {
+            'test_name': 'gravity_setting',
+            'passed': gravity_match,
+            'expected': expected_gravity,
+            'actual': actual_gravity,
+            'message': 'Gravity setting' + (' matches' if gravity_match else ' does not match') + ' expected value'
+        }
+    
+    def check_robot_mass_distribution(self, robot_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check that robot mass distribution is realistic for humanoid
+        """
+        # Check total mass
+        total_mass = robot_state.get('total_mass', 0)
+        mass_acceptable = 30 <= total_mass <= 100  # 30-100 kg for humanoid robot
+        
+        # Check individual link masses
+        link_masses = robot_state.get('link_masses', {})
+        link_mass_errors = []
+        
+        for link_name, mass in link_masses.items():
+            if mass < 0.1:  # Too light for physical robot
+                link_mass_errors.append(f"Link {link_name} mass too low: {mass}kg")
+            elif mass > 10:  # Possibly too heavy for small link
+                link_mass_errors.append(f"Link {link_name} mass possibly too high: {mass}kg")
+        
+        return {
+            'test_name': 'robot_mass_distribution',
+            'passed': mass_acceptable and len(link_mass_errors) == 0,
+            'total_mass': total_mass,
+            'link_mass_issues': link_mass_errors,
+            'message': f'Total robot mass ({total_mass}kg) is acceptable' if mass_acceptable else f'Total robot mass ({total_mass}kg) is outside acceptable range (30-100kg)'
+        }
+    
+    def check_collision_properties(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check that collision properties are properly set
+        """
+        collision_objects = world_state.get('collision_objects', [])
+        issues = []
+        
+        for obj in collision_objects:
+            if not obj.get('collision_enabled', True):
+                issues.append(f"Object {obj['name']} has collision disabled")
+            
+            if not obj.get('contact_reporting', False):
+                issues.append(f"Object {obj['name']} has contact reporting disabled")
+        
+        return {
+            'test_name': 'collision_properties',
+            'passed': len(issues) == 0,
+            'issues': issues,
+            'message': 'All collision properties are properly set' if len(issues) == 0 else f'Found {len(issues)} collision property issues'
+        }
+    
+    def check_friction_coefficients(self, world_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check that friction coefficients are realistic
+        """
+        surfaces = world_state.get('surfaces', {})
+        issues = []
+        
+        # Typical friction coefficients for humanoid environments
+        expected_ranges = {
+            'floor_tile': (0.4, 0.8),
+            'wood_floor': (0.3, 0.6),
+            'carpet': (0.4, 1.0),
+            'table_surface': (0.3, 0.7)
+        }
+        
+        for surf_name, properties in surfaces.items():
+            coeff = properties.get('friction', 0)
+            if surf_name in expected_ranges:
+                min_val, max_val = expected_ranges[surf_name]
+                if not (min_val <= coeff <= max_val):
+                    issues.append(
+                        f"Surface {surf_name} has friction {coeff}, expected range {min_val}-{max_val}"
+                    )
+        
+        return {
+            'test_name': 'friction_coefficients',
+            'passed': len(issues) == 0,
+            'issues': issues,
+            'message': 'Friction coefficients are within expected ranges' if len(issues) == 0 else f'Found {len(issues)} friction coefficient issues'
+        }
+    
+    def check_joint_limits(self, robot_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check that joint limits are appropriate for humanoid
+        """
+        joints = robot_state.get('joints', {})
+        issues = []
+        
+        # Define expected limits for humanoid joints
+        expected_limits = {
+            'hip_pitch': (-1.57, 1.57),      # -90 to 90 degrees 
+            'hip_roll': (-0.785, 0.785),    # -45 to 45 degrees
+            'hip_yaw': (-0.785, 0.785),    # -45 to 45 degrees
+            'knee': (0, 2.356),            # 0 to 135 degrees (flexion only)
+            'ankle_pitch': (-0.523, 0.523), # -30 to 30 degrees
+            'ankle_roll': (-0.785, 0.785)  # -45 to 45 degrees
+        }
+        
+        for joint_name, properties in joints.items():
+            limits = properties.get('limits', {})
+            lower = limits.get('lower', 0)
+            upper = limits.get('upper', 0)
+            
+            if joint_name in expected_limits:
+                exp_lower, exp_upper = expected_limits[joint_name]
+                if not (abs(lower - exp_lower) < 0.5 and abs(upper - exp_upper) < 0.5):
+                    issues.append(
+                        f"Joint {joint_name} limits ({lower:.2f}, {upper:.2f}) differ significantly "
+                        f"from expected ({exp_lower:.2f}, {exp_upper:.2f})"
+                    )
+        
+        return {
+            'test_name': 'joint_limits',
+            'passed': len(issues) == 0,
+            'issues': issues,
+            'message': f'Joint limits appropriate' if len(issues) == 0 else f'Found {len(issues)} joint limit issues'
+        }
+    
+    def run_validation(self, simulation_state: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Run all validation checks on the simulation state
+        """
+        world_state = simulation_state.get('world', {})
+        robot_state = simulation_state.get('robot', {})
+        
+        results = []
+        
+        for check in self.validation_checks:
+            try:
+                result = check(world_state, robot_state) if 'robot_state' in check.__code__.co_varnames else check(world_state)
+                results.append(result)
+            except Exception as e:
+                results.append({
+                    'test_name': check.__name__,
+                    'passed': False,
+                    'error': str(e),
+                    'message': f'Validation check {check.__name__} failed with error: {e}'
+                })
+        
+        return results
+    
+    def generate_validation_report(self, validation_results: List[Dict[str, Any]]) -> str:
+        """
+        Generate a human-readable validation report
+        """
+        passed_count = sum(1 for result in validation_results if result.get('passed', False))
+        total_count = len(validation_results)
+        
+        report = f"PHYSICS VALIDATION REPORT\n"
+        report += f"{'='*30}\n"
+        report += f"Results: {passed_count}/{total_count} checks passed\n\n"
+        
+        for result in validation_results:
+            status = "✓ PASS" if result.get('passed', False) else "✗ FAIL"
+            report += f"{status} {result['test_name']}: {result['message']}\n"
+            
+            if result.get('issues'):
+                for issue in result['issues']:
+                    report += f"    - {issue}\n"
+            elif result.get('error'):
+                report += f"    Error: {result['error']}\n"
+        
+        report += f"\nRecommendations for failed checks:\n"
+        if passed_count < total_count:
+            report += "- Review and adjust physics parameters as indicated in failures\n"
+            report += "- Consider re-running validation after adjustments\n"
+            report += "- Verify robot model URDF/SDF definition\n"
+        else:
+            report += "All validation checks passed! Physics parameters are appropriate for humanoid simulation."
+        
+        return report
+
+
+# Example usage
+def validate_simulation_physics():
+    # Sample simulation state (in practice, this would come from the Isaac Sim environment)
+    sample_state = {
+        'world': {
+            'gravity': np.array([0, 0, -9.81]),
+            'surfaces': {
+                'floor_tile': {'friction': 0.6},
+                'wood_floor': {'friction': 0.4},
+                'table_surface': {'friction': 0.5}
+            },
+            'collision_objects': [
+                {'name': 'robot', 'collision_enabled': True, 'contact_reporting': True},
+                {'name': 'object1', 'collision_enabled': True, 'contact_reporting': True}
+            ]
+        },
+        'robot': {
+            'total_mass': 45.0,
+            'link_masses': {
+                'pelvis': 5.0,
+                'torso': 8.0,
+                'head': 2.0,
+                'left_hip': 1.5,
+                'left_knee': 1.2,
+                'left_ankle': 0.8
+            },
+            'joints': {
+                'left_hip_pitch': {'limits': {'lower': -1.55, 'upper': 1.55}},
+                'left_hip_roll': {'limits': {'lower': -0.75, 'upper': 0.75}},
+                'left_knee': {'limits': {'lower': 0.0, 'upper': 2.3}},
+                'left_ankle_pitch': {'limits': {'lower': -0.5, 'upper': 0.5}}
+            }
+        }
+    }
+    
+    validator = PhysicsValidator()
+    results = validator.run_validation(sample_state)
+    report = validator.generate_validation_report(results)
+    
+    print(report)
+    
+    return results
 
 
 if __name__ == "__main__":
-    main()
+    validation_results = validate_simulation_physics()
 ```
 
 ### Hints
 
-- Use USD materials for realistic textures
-- Consider camera exposure settings for synthetic data quality
-- Implement scene randomization to diversify training data
-- Save data in formats compatible with standard ML pipelines
+- Verify physics parameters match human-like values
+- Test simulation stability with various robot poses
+- Check collision detection across different surface types
+- Validate joint limits prevent damage and ensure realistic motion
 
-## Exercise 2: Deep Learning-Based Object Grasping
+## Exercise 2: Integrating Isaac Sim with Perception System
 
-Implement a grasp planning system that uses AI to determine the best grasp point on an object.
+Connect Isaac Sim with the perception system to enable realistic sensor simulation.
 
 ### Instructions
 
-1. Create a deep learning model for grasp detection:
-   - Take RGB-D images as input
-   - Output grasp quality and angle at each pixel
-   - Use a U-Net or similar architecture
-
-2. Implement data collection in Isaac Sim:
-   - Generate diverse objects and lighting conditions
-   - Record successful and failed grasps
-   - Create labeled training data
-
-3. Deploy the model to predict grasps:
-   - Process camera images from robot
-   - Select highest-scoring grasp
-   - Execute grasp and evaluate success
-
-4. Integrate with robot control:
-   - Convert 2D grasp prediction to 3D world coordinates
-   - Plan trajectory to grasp location
-   - Execute grasp maneuver
+1. Configure Isaac Sim to export sensor data (RGB, depth, IMU, LiDAR).
+2. Implement sensor data processing pipelines.
+3. Validate sensor data accuracy and realism.
+4. Integrate perception with action planning systems.
+5. Test the complete perception-action loop.
 
 ### Solution
 
-First, create the grasp detection model (grasp_detector.py):
+#### 1. Isaac Sim Sensor Configuration
 
 ```python
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-class GraspDetector(nn.Module):
-    def __init__(self, input_channels=4):  # RGB + depth
-        super(GraspDetector, self).__init__()
-        
-        # Encoder (downsampling path)
-        self.enc1 = self.double_conv(input_channels, 32)
-        self.pool1 = nn.MaxPool2d(2)
-        
-        self.enc2 = self.double_conv(32, 64)
-        self.pool2 = nn.MaxPool2d(2)
-        
-        self.enc3 = self.double_conv(64, 128)
-        self.pool3 = nn.MaxPool2d(2)
-        
-        self.enc4 = self.double_conv(128, 256)
-        self.pool4 = nn.MaxPool2d(2)
-        
-        # Bottleneck
-        self.bottleneck = self.double_conv(256, 512)
-        
-        # Decoder (upsampling path)
-        self.upconv4 = nn.ConvTranspose2d(512, 256, 2, stride=2)
-        self.dec4 = self.double_conv(512, 256)
-        
-        self.upconv3 = nn.ConvTranspose2d(256, 128, 2, stride=2)
-        self.dec3 = self.double_conv(256, 128)
-        
-        self.upconv2 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.dec2 = self.double_conv(128, 64)
-        
-        self.upconv1 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.dec1 = self.double_conv(64, 32)
-        
-        # Output heads
-        self.quality_head = nn.Conv2d(32, 1, 1)
-        self.angle_head = nn.Conv2d(32, 1, 1)
-        
-    def double_conv(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, 3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-    
-    def forward(self, x):
-        # Encoder
-        enc1 = self.enc1(x)  # 32 channels
-        enc2 = self.enc2(self.pool1(enc1))  # 64 channels
-        enc3 = self.enc3(self.pool2(enc2))  # 128 channels
-        enc4 = self.enc4(self.pool3(enc3))  # 256 channels
-        
-        bottleneck = self.bottleneck(self.pool4(enc4))  # 512 channels
-        
-        # Decoder
-        dec4 = self.upconv4(bottleneck)  # 256 channels
-        dec4 = torch.cat((dec4, enc4), dim=1)  # 256 + 256 = 512 channels
-        dec4 = self.dec4(dec4)  # 256 channels
-        
-        dec3 = self.upconv3(dec4)  # 128 channels
-        dec3 = torch.cat((dec3, enc3), dim=1)  # 128 + 128 = 256 channels
-        dec3 = self.dec3(dec3)  # 128 channels
-        
-        dec2 = self.upconv2(dec3)  # 64 channels
-        dec2 = torch.cat((dec2, enc2), dim=1)  # 64 + 64 = 128 channels
-        dec2 = self.dec2(dec2)  # 64 channels
-        
-        dec1 = self.upconv1(dec2)  # 32 channels
-        dec1 = torch.cat((dec1, enc1), dim=1)  # 32 + 32 = 64 channels
-        dec1 = self.dec1(dec1)  # 32 channels
-        
-        # Output heads
-        quality = torch.sigmoid(self.quality_head(dec1))  # Grasp quality [0,1]
-        angle = torch.tanh(self.angle_head(dec1)) * torch.pi  # Grasp angle [-π, π]
-        
-        return quality, angle
-
-
-class GraspPlanningNode:
-    def __init__(self):
-        # Initialize the grasp detector model
-        self.model = GraspDetector(input_channels=4)  # RGB + depth
-        # Load pre-trained weights (in practice)
-        # self.model.load_state_dict(torch.load('grasp_model.pth'))
-        self.model.eval()
-        
-        # Device
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model.to(self.device)
-        
-        # Camera parameters (in practice, from calibration)
-        self.fx = 554.25469  # Focal length x
-        self.fy = 554.25469  # Focal length y
-        self.cx = 320.0      # Principal point x
-        self.cy = 240.0      # Principal point y
-    
-    def preprocess_input(self, rgb_image, depth_image):
-        """Preprocess RGB and depth images for the network"""
-        # Resize images to network input size
-        input_size = (480, 640)  # Height, Width
-        rgb_resized = cv2.resize(rgb_image, (input_size[1], input_size[0]))  # (Width, Height)
-        depth_resized = cv2.resize(depth_image, (input_size[1], input_size[0]))
-        
-        # Normalize RGB image
-        rgb_normalized = rgb_resized.astype(np.float32) / 255.0
-        
-        # Normalize depth image (assuming max depth of 5 meters)
-        depth_normalized = depth_resized.astype(np.float32) / 5.0
-        
-        # Stack RGB and depth
-        input_tensor = np.concatenate([
-            rgb_normalized,
-            np.expand_dims(depth_normalized, axis=2)  # Add channel dimension
-        ], axis=2)
-        
-        # Change to CHW format (channel, height, width)
-        input_tensor = np.transpose(input_tensor, (2, 0, 1))
-        
-        # Add batch dimension
-        input_tensor = np.expand_dims(input_tensor, axis=0)
-        
-        return torch.tensor(input_tensor, dtype=torch.float32).to(self.device)
-    
-    def find_best_grasp(self, quality_map, angle_map):
-        """Find the best grasp from quality and angle maps"""
-        # Convert to numpy for processing
-        if isinstance(quality_map, torch.Tensor):
-            quality_map = quality_map.squeeze().cpu().numpy()
-            angle_map = angle_map.squeeze().cpu().numpy()
-        
-        # Find the location with highest grasp quality
-        best_y, best_x = np.unravel_index(np.argmax(quality_map), quality_map.shape)
-        
-        # Get the corresponding angle
-        best_angle = angle_map[best_y, best_x]
-        
-        # Calculate world coordinates using depth
-        # For now, return image coordinates and angle
-        return {
-            'x': int(best_x),
-            'y': int(best_y),
-            'angle': float(best_angle),
-            'quality': float(quality_map[best_y, best_x]),
-            'center_offset_x': (best_x - quality_map.shape[1]/2) / quality_map.shape[1],  # Normalized offset
-            'center_offset_y': (best_y - quality_map.shape[0]/2) / quality_map.shape[0]   # Normalized offset
-        }
-    
-    def image_to_world(self, u, v, depth):
-        """Convert image coordinates to world coordinates"""
-        # Convert pixel coordinates to camera coordinates
-        x_cam = (u - self.cx) * depth / self.fx
-        y_cam = (v - self.cy) * depth / self.fy
-        
-        # In practice, you'd also need to transform from camera to world frame
-        # This requires camera extrinsic parameters
-        # For now, just return camera frame coordinates
-        return np.array([x_cam, y_cam, depth])
-    
-    def predict_grasp(self, rgb_image, depth_image):
-        """Predict the best grasp for a given RGB-D image"""
-        # Preprocess input
-        input_tensor = self.preprocess_input(rgb_image, depth_image)
-        
-        # Run inference
-        with torch.no_grad():
-            quality_pred, angle_pred = self.model(input_tensor)
-        
-        # Find the best grasp
-        best_grasp = self.find_best_grasp(quality_pred, angle_pred)
-        
-        # Get depth at grasp location
-        grasp_depth = depth_image[int(best_grasp['y']), int(best_grasp['x'])] if (
-            0 <= best_grasp['y'] < depth_image.shape[0] and 
-            0 <= best_grasp['x'] < depth_image.shape[1]
-        ) else 1.0  # Default depth if out of bounds
-        
-        # Convert to world coordinates
-        world_coords = self.image_to_world(
-            best_grasp['x'], 
-            best_grasp['y'], 
-            grasp_depth
-        )
-        
-        best_grasp['world_position'] = world_coords
-        best_grasp['depth'] = grasp_depth
-        
-        return best_grasp
-
-
-def main():
-    # Initialize
-    grasp_planner = GraspPlanningNode()
-    
-    # Load sample images (in practice, from robot camera)
-    # For demo purposes:
-    rgb_sample = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
-    depth_sample = np.random.rand(480, 640).astype(np.float32) * 2.0 + 0.5  # 0.5-2.5m range
-    
-    # Predict grasp
-    best_grasp = grasp_planner.predict_grasp(rgb_sample, depth_sample)
-    
-    print(f"Best Grasp: Position={best_grasp['world_position']}, Quality={best_grasp['quality']:.3f}, Angle={best_grasp['angle']:.3f}rad")
-    
-    return best_grasp
-```
-
-Then create the ROS 2 integration (grasp_integration.py):
-
-```python
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
-from geometry_msgs.msg import Pose, Point, Quaternion
-from std_msgs.msg import Float32
-from cv_bridge import CvBridge
+# isaac_sim_sensors.py
+from omni.isaac.core import World
+from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.core.utils.nucleus import get_assets_root_path
+from omni.isaac.sensor import Camera, IMUSensor, ContactSensor
+from omni.isaac.range_sensor import LidarRtx
+import carb
 import numpy as np
-import cv2
-from grasp_detector import GraspPlanningNode
 
 
-class GraspROSNode(Node):
-    def __init__(self):
-        super().__init__('grasp_ros_node')
+class HumanoidSensorSetup:
+    """
+    Sets up sensors for humanoid robot in Isaac Sim
+    """
+    
+    def __init__(self, world: World):
+        self.world = world
+        self.sensors = {}
         
-        # Initialize components
-        self.bridge = CvBridge()
-        self.grasp_planner = GraspPlanningNode()
-        
-        # Current sensor data
-        self.rgb_image = None
-        self.depth_image = None
-        
-        # Subscribers
-        self.rgb_sub = self.create_subscription(
-            Image, '/camera/rgb/image_raw', self.rgb_callback, 10
+    def setup_cameras(self, robot_prim_path: str):
+        """
+        Set up RGB and depth cameras on the robot
+        """
+        # Head camera for vision-based perception
+        head_camera = self.world.scene.add(
+            Camera(
+                prim_path=robot_prim_path + "/head_camera",
+                name="head_camera",
+                position=np.array([0.1, 0.0, 0.15]),  # Slightly forward and up from head
+                frequency=30,  # 30 Hz
+                resolution=(640, 480)
+            )
         )
-        self.depth_sub = self.create_subscription(
-            Image, '/camera/depth/image_raw', self.depth_callback, 10
+        
+        # Add depth camera functionality
+        head_depth_camera = self.world.scene.add(
+            Camera(
+                prim_path=robot_prim_path + "/head_depth_camera",
+                name="head_depth_camera",
+                position=np.array([0.1, 0.05, 0.15]),  # Slightly offset from RGB camera
+                frequency=30,
+                resolution=(640, 480),
+                translation=np.array([0.1, 0.05, 0.15])
+            )
         )
         
-        # Publishers
-        self.grasp_pose_pub = self.create_publisher(Pose, '/best_grasp_pose', 10)
-        self.grasp_quality_pub = self.create_publisher(Float32, '/grasp_quality', 10)
+        # Enable depth data on the depth camera
+        head_depth_camera.add_ground_truth_to_frame()
         
-        # Timer for grasp planning
-        self.grasp_timer = self.create_timer(1.0, self.plan_grasp)
+        self.sensors['head_rgb'] = head_camera
+        self.sensors['head_depth'] = head_depth_camera
         
-        self.get_logger().info("Grasp ROS Node initialized")
+        print("Cameras configured successfully")
     
-    def rgb_callback(self, msg):
-        """Process RGB image"""
-        try:
-            self.rgb_image = self.bridge.imgmsg_to_cv2(msg, 'rgb8')
-        except Exception as e:
-            self.get_logger().error(f"Error converting RGB image: {e}")
+    def setup_imu(self, robot_prim_path: str):
+        """
+        Set up IMU sensors on the robot
+        """
+        # Add IMU to torso for balance sensing
+        torso_imu = IMUSensor(
+            prim_path=robot_prim_path + "/torso_imu",
+            name="torso_imu",
+            position=np.array([0.0, 0.0, 0.3]),  # In torso area
+            frequency=100,  # High frequency for balance control (100Hz)
+            orientation=np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+        )
+        
+        self.world.scene.add(torso_imu)
+        self.sensors['torso_imu'] = torso_imu
+        
+        # Add IMU to head for orientation
+        head_imu = IMUSensor(
+            prim_path=robot_prim_path + "/head_imu",
+            name="head_imu",
+            position=np.array([0.0, 0.0, 0.15]),  # In head area
+            frequency=50,  # 50Hz for head orientation
+            orientation=np.array([1.0, 0.0, 0.0, 0.0])
+        )
+        
+        self.world.scene.add(head_imu)
+        self.sensors['head_imu'] = head_imu
+        
+        print("IMU sensors configured successfully")
     
-    def depth_callback(self, msg):
-        """Process depth image"""
-        try:
-            self.depth_image = self.bridge.imgmsg_to_cv2(msg, '32FC1')
-        except Exception as e:
-            self.get_logger().error(f"Error converting depth image: {e}")
+    def setup_lidar(self, robot_prim_path: str):
+        """
+        Set up LiDAR sensor on the robot
+        """
+        # Create LiDAR sensor on robot head
+        lidar = LidarRtx(
+            prim_path=robot_prim_path + "/head_lidar",
+            name="head_lidar",
+            translation=np.array([0.15, 0.0, 0.2]),  # On top of head
+            rotation=np.array([0.0, 0.0, 0.0]),
+            # LiDAR parameters
+            configuration={
+                "rotation_frequency": 20,
+                "channels": 16,  # 16 channels for 3D scanning
+                "points_per_channel": 1800,
+                "horizontal_fov": 360,  # Full 360 degree scan
+                "vertical_fov": 30,  # 30 degree vertical spread
+                "range": 25.0,  # 25m max range
+                "min_range": 0.1,  # 10cm min range
+            },
+            # Advanced settings for humanoid navigation
+            physics_material_path=robot_prim_path + "/lidar_material",
+            visible=True
+        )
+        
+        self.world.scene.add(lidar)
+        self.sensors['head_lidar'] = lidar
+        
+        print("LiDAR sensor configured successfully")
     
-    def plan_grasp(self):
-        """Plan a grasp when both images are available"""
-        if self.rgb_image is None or self.depth_image is None:
-            self.get_logger().warn("Waiting for both RGB and depth images")
-            return
+    def setup_contact_sensors(self, robot_prim_path: str):
+        """
+        Set up contact sensors for detecting physical interactions
+        """
+        # Add contact sensors to feet for walking detection
+        left_foot_contact = ContactSensor(
+            prim_path=robot_prim_path + "/left_foot_contact",
+            name="left_foot_contact",
+            position=np.array([0.0, 0.08, -0.05]),  # Bottom of left foot
+            contact_filters=["ground", "floor"],
+            frequency=60
+        )
         
-        try:
-            # Plan grasp
-            grasp = self.grasp_planner.predict_grasp(self.rgb_image, self.depth_image)
-            
-            if grasp['quality'] > 0.5:  # Only publish high-quality grasps
-                # Create pose message
-                pose_msg = Pose()
-                pose_msg.position.x = float(grasp['world_position'][0])
-                pose_msg.position.y = float(grasp['world_position'][1])
-                pose_msg.position.z = float(grasp['world_position'][2])
-                
-                # Convert angle to quaternion (simplified - only rotation around Z)
-                angle = grasp['angle']
-                pose_msg.orientation.z = np.sin(angle / 2.0)
-                pose_msg.orientation.w = np.cos(angle / 2.0)
-                
-                # Publish pose
-                self.grasp_pose_pub.publish(pose_msg)
-                
-                # Publish quality
-                quality_msg = Float32()
-                quality_msg.data = float(grasp['quality'])
-                self.grasp_quality_pub.publish(quality_msg)
-                
-                self.get_logger().info(
-                    f"Published grasp: Pos({pose_msg.position.x:.3f}, {pose_msg.position.y:.3f}, {pose_msg.position.z:.3f}), "
-                    f"Quality: {quality_msg.data:.3f}, Angle: {angle:.3f}rad"
-                )
-            else:
-                self.get_logger().warn(f"Low quality grasp found: {grasp['quality']:.3f}")
-                
-        except Exception as e:
-            self.get_logger().error(f"Error planning grasp: {e}")
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = GraspROSNode()
+        self.world.scene.add(left_foot_contact)
+        self.sensors['left_foot_contact'] = left_foot_contact
+        
+        right_foot_contact = ContactSensor(
+            prim_path=robot_prim_path + "/right_foot_contact",
+            name="right_foot_contact", 
+            position=np.array([0.0, -0.08, -0.05]),  # Bottom of right foot
+            contact_filters=["ground", "floor"],
+            frequency=60
+        )
+        
+        self.world.scene.add(right_foot_contact)
+        self.sensors['right_foot_contact'] = right_foot_contact
+        
+        # Add contact sensors to hands for manipulation
+        left_hand_contact = ContactSensor(
+            prim_path=robot_prim_path + "/left_hand_contact",
+            name="left_hand_contact",
+            position=np.array([0.0, 0.0, 0.0]),  # In the hand
+            contact_filters=["object", "graspable"],
+            frequency=60
+        )
+        
+        self.world.scene.add(left_hand_contact)
+        self.sensors['left_hand_contact'] = left_hand_contact
+        
+        print("Contact sensors configured successfully")
     
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-### Hints
-
-- Use data augmentation to improve model generalization
-- Consider the physical constraints of your robot gripper
-- Implement grasp verification to avoid false positives
-- Evaluate on real robot once validated in simulation
-
-## Exercise 3: Bipedal Walking with MPC Controller
-
-Create a model predictive controller for bipedal walking that maintains balance while stepping.
-
-### Instructions
-
-1. Implement an LIPM (Linear Inverted Pendulum Model) for bipedal balance:
-   - Calculate Zero Moment Point (ZMP)
-   - Plan center of mass trajectory
-   - Account for foot placement constraints
-
-2. Design an MPC controller:
-   - Predict future states over a horizon
-   - Optimize for balance and trajectory tracking
-   - Consider torque and stepping constraints
-
-3. Simulate the walking controller:
-   - Implement in Isaac Sim or Gazebo
-   - Test on different terrains
-   - Evaluate stability metrics
-
-4. Integrate with perception for adaptive walking:
-   - Detect terrain changes
-   - Adjust gait parameters accordingly
-   - Handle obstacles dynamically
-
-### Solution
-
-First, create the LIPM and MPC components (bipedal_controller.py):
-
-```python
-import numpy as np
-from scipy.optimize import minimize
-import cvxpy as cp
-
-
-class LinearInvertedPendulumModel:
-    def __init__(self, height=0.8, gravity=9.81):
-        self.height = height
-        self.gravity = gravity
-        self.omega = np.sqrt(gravity / height)
+    def setup_sensors_for_humanoid(self, robot_prim_path: str = "/World/Robot"):
+        """
+        Set up all sensors for the humanoid robot
+        """
+        self.setup_cameras(robot_prim_path)
+        self.setup_imu(robot_prim_path)
+        self.setup_lidar(robot_prim_path)
+        self.setup_contact_sensors(robot_prim_path)
         
-        # Current state: [com_x, com_y, com_dx, com_dy]
-        self.state = np.zeros(4)
-        
-    def compute_zmp(self, com_pos, com_vel):
-        """Compute Zero Moment Point from CoM position and velocity"""
-        zmp_x = com_pos[0] - (com_pos[2] / self.gravity) * com_vel[0]
-        zmp_y = com_pos[1] - (com_pos[2] / self.gravity) * com_vel[1]
-        return np.array([zmp_x, zmp_y])
-    
-    def dynamics_step(self, com_pos, com_vel, zmp, dt):
-        """Step the LIPM dynamics forward in time"""
-        # Linear Inverted Pendulum Model equations
-        com_acc = self.omega**2 * (com_pos[:2] - zmp)
-        
-        # Integrate velocity and position
-        com_vel[:2] += com_acc * dt
-        com_pos[:2] += com_vel[:2] * dt
-        
-        # Z stays constant in LIPM
-        # Update state
-        self.state[:2] = com_pos[:2]  # x, y
-        self.state[2:] = com_vel[:2]  # dx, dy
-        
-        return com_pos, com_vel
-
-
-class BipedalMPCController:
-    def __init__(self, com_height=0.8, dt=0.01, horizon=50):
-        self.lipm = LinearInvertedPendulumModel(height=com_height)
-        self.dt = dt
-        self.horizon = horizon  # Prediction horizon
-        
-        # Walking parameters
-        self.step_length = 0.3  # 30 cm step
-        self.step_width = 0.2   # 20 cm step width
-        self.step_duration = 1.0  # 1 second per step
-        
-        # Foot positions (left foot, right foot)
-        self.left_foot_pos = np.array([0.0, self.step_width/2, 0.0])
-        self.right_foot_pos = np.array([0.0, -self.step_width/2, 0.0])
-        self.support_foot = 'left'  # Which foot is supporting now
-        
-        # MPC weights
-        self.Q = np.diag([10.0, 10.0, 1.0, 1.0])  # State cost (x, y, dx, dy)
-        self.R = np.diag([0.1, 0.1])  # Control cost (zmp_x, zmp_y)
-        self.Q_terminal = np.diag([100.0, 100.0, 10.0, 10.0])  # Terminal cost
-    
-    def predict_trajectory(self, current_state, zmp_sequence):
-        """Predict CoM trajectory given ZMP sequence"""
-        predicted_states = []
-        current_com_pos = current_state[:2].copy()
-        current_com_vel = current_state[2:].copy()
-        
-        for zmp in zmp_sequence:
-            # Update CoM using LIPM
-            com_acc = self.lipm.omega**2 * (current_com_pos - zmp)
-            current_com_vel += com_acc * self.dt
-            current_com_pos += current_com_vel * self.dt
-            
-            # Store state
-            state = np.concatenate([current_com_pos, current_com_vel])
-            predicted_states.append(state.copy())
-        
-        return np.array(predicted_states)
-    
-    def mpc_optimization(self, current_state, desired_trajectory):
-        """Solve MPC optimization problem"""
-        # Optimization variables: ZMP sequence for the horizon
-        zmp_vars = cp.Variable((self.horizon, 2))
-        
-        # Cost function components
-        total_cost = 0
-        
-        # Predict state evolution
-        state = current_state.copy()
-        for i in range(self.horizon):
-            # Dynamics: x_next = A*x + B*u
-            com_acc = self.lipm.omega**2 * (state[:2] - zmp_vars[i])
-            next_state = state.copy()
-            next_state[:2] += state[2:] * self.dt  # Position update
-            next_state[2:] += com_acc * self.dt   # Velocity update
-            
-            # State cost: ||state - desired_state||_Q^2
-            if i < len(desired_trajectory):
-                state_error = next_state - desired_trajectory[i]
-            else:
-                # If beyond trajectory, stay at last known position
-                state_error = next_state - desired_trajectory[-1]
-            
-            total_cost += cp.quad_form(state_error, self.Q)
-            
-            # Control cost: ||zmp||_R^2
-            total_cost += cp.quad_form(zmp_vars[i], self.R)
-            
-            # Update state for next iteration
-            state = next_state
-        
-        # Terminal cost
-        terminal_state_error = state - desired_trajectory[-1]
-        total_cost += cp.quad_form(terminal_state_error, self.Q_terminal)
-        
-        # Constraints
-        constraints = []
-        
-        # Reasonable ZMP bounds (relative to support foot)
-        support_pos = self.left_foot_pos if self.support_foot == 'left' else self.right_foot_pos
-        zmp_x_min, zmp_x_max = support_pos[0] - 0.1, support_pos[0] + 0.1
-        zmp_y_min, zmp_y_max = support_pos[1] - 0.1, support_pos[1] + 0.1
-        
-        for i in range(self.horizon):
-            constraints.extend([
-                zmp_vars[i, 0] >= zmp_x_min,
-                zmp_vars[i, 0] <= zmp_x_max,
-                zmp_vars[i, 1] >= zmp_y_min,
-                zmp_vars[i, 1] <= zmp_y_max
-            ])
-        
-        # Solve optimization problem
-        prob = cp.Problem(cp.Minimize(total_cost), constraints)
-        prob.solve(verbose=False)
-        
-        if prob.status not in ["optimal", "optimal_inaccurate"]:
-            print(f"MPC optimization failed: {prob.status}")
-            return None
-        
-        # Return optimal ZMP sequence
-        return zmp_vars.value
-    
-    def generate_desired_trajectory(self, walk_direction, num_steps=10):
-        """Generate desired walking trajectory"""
-        # Simple straight-line walking trajectory
-        dx, dy = walk_direction
-        step_interval = self.step_duration / self.dt  # Steps in simulation time
-        
-        trajectory = []
-        base_x, base_y = 0.0, 0.0
-        
-        for i in range(self.horizon):
-            t = i * self.dt
-            # Interpolate between steps
-            step_num = int(t / self.step_duration)
-            
-            if self.support_foot == 'left':
-                # Currently left foot is supporting, moving right foot
-                x = base_x + dx * step_num * self.step_length
-                y = base_y + dy * step_num * self.step_width
-            else:
-                # Currently right foot is supporting, moving left foot
-                x = base_x + dx * step_num * self.step_length
-                y = base_y + dy * step_num * self.step_width
-            
-            # Add smooth transitions between steps
-            step_progress = (t % self.step_duration) / self.step_duration
-            if step_progress < 0.5:  # First half of step - stay put
-                pos_x = x
-                pos_y = y
-            else:  # Second half - prepare for next step
-                pos_x = x + dx * self.step_length * step_progress
-                pos_y = y + dy * self.step_width * step_progress
-            
-            # Velocity (derivative of position)
-            vel_x = dx * self.step_length / self.step_duration if step_progress >= 0.5 else 0
-            vel_y = dy * self.step_width / self.step_duration if step_progress >= 0.5 else 0
-            
-            # State = [pos_x, pos_y, vel_x, vel_y]
-            state = np.array([pos_x, pos_y, vel_x, vel_y])
-            trajectory.append(state)
-        
-        return np.array(trajectory)
-    
-    def compute_control(self, current_state, walk_direction):
-        """Compute control ZMP given current state and desired direction"""
-        # Generate desired trajectory based on walking direction
-        desired_traj = self.generate_desired_trajectory(walk_direction, num_steps=self.horizon)
-        
-        # Solve MPC problem
-        optimal_zmps = self.mpc_optimization(current_state, desired_traj)
-        
-        if optimal_zmps is not None:
-            # Return first control action
-            return optimal_zmps[0]
-        else:
-            # Fallback: use current ZMP
-            zmp = self.lipm.compute_zmp(current_state[:2], current_state[2:])
-            return zmp
-
-
-class BipedalWalkNode:
-    def __init__(self):
-        # Initialize MPC controller
-        self.mpc_controller = BipedalMPCController(com_height=0.85)
-        
-        # Robot state (CoM position and velocity)
-        self.com_state = np.array([0.0, 0.0, 0.0, 0.0])  # [x, y, dx, dy]
-        
-        # Walking direction (normalized)
-        self.walk_direction = np.array([1.0, 0.0])  # Moving forward initially
-        
-        # Timer for control loop
-        self.walk_timer = self.create_timer(0.01, self.walk_control_loop)  # 100 Hz
-    
-    def walk_control_loop(self):
-        """Main walking control loop"""
-        # Compute desired ZMP using MPC
-        desired_zmp = self.mpc_controller.compute_control(self.com_state, self.walk_direction)
-        
-        if desired_zmp is not None:
-            # Apply control using LIPM dynamics
-            com_acc = self.mpc_controller.lipm.omega**2 * (self.com_state[:2] - desired_zmp)
-            
-            # Update state
-            self.com_state[2:] += com_acc * self.mpc_controller.dt  # Update velocity
-            self.com_state[:2] += self.com_state[2:] * self.mpc_controller.dt  # Update position
-            
-            # Log walking progress
-            self.get_logger().info(f"Walking: Pos({self.com_state[0]:.3f}, {self.com_state[1]:.3f}), Vel({self.com_state[2]:.3f}, {self.com_state[3]:.3f})")
-            
-            # Update support foot based on walking pattern
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            step_phase = (current_time / self.mpc_controller.step_duration) % 2
-            if step_phase < 1:
-                self.mpc_controller.support_foot = 'left'
-            else:
-                self.mpc_controller.support_foot = 'right'
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    walk_node = BipedalWalkNode()
-    
-    try:
-        rclpy.spin(walk_node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        walk_node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-### Hints
-
-- Start with a simple balancing task before adding walking
-- Monitor ZMP error to assess balance quality
-- Consider foot rotation and placement for turning maneuvers
-- Implement recovery behaviors to handle disturbances
-
-## Chapter Summary
-
-These exercises demonstrated key concepts in AI-powered robotics:
-- Creating synthetic training data with Isaac Sim
-- Implementing deep learning for robot perception and manipulation
-- Developing control systems for complex behaviors like bipedal walking
-- Integrating perception, planning, and control for complete robotic systems
-
-## Checklist
-
-- [ ] Create Isaac Sim scene with perception sensors
-- [ ] Implement deep learning grasp planning system
-- [ ] Deploy model for real-time inference
-- [ ] Design MPC controller for bipedal walking
-- [ ] Integrate perception for adaptive behaviors
-- [ ] Validate algorithms in simulation
-- [ ] Test on physical robot (when available)
-
-## References
-
-- [NVIDIA Isaac Sim Documentation](https://docs.omniverse.nvidia.com/isaacsim/latest/index.html)
-- [ROS 2 Navigation2 Tutorials](https://navigation.ros.org/tutorials/)
-- [Deep Reinforcement Learning for Robotics](https://arxiv.org/abs/1804.00495)
-- [Model Predictive Control for Robotics](https://ieeexplore.ieee.org/document/8794269)
+        return self.sensors

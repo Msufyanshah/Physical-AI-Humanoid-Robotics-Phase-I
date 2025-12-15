@@ -4,6 +4,7 @@ from src.services.chat_service import ChatService
 from src.services.embedding_service import EmbeddingService
 from src.services.retrieval_service import RetrievalService
 from src.services.vector_store_service import VectorStoreService
+from src.services.error_handling import ErrorRecoverySystem
 import logging
 
 # Set up logging
@@ -23,6 +24,10 @@ try:
     embedding_service = EmbeddingService()
     retrieval_service = RetrievalService()
     vector_store_service = VectorStoreService()
+
+    # Initialize error recovery system
+    error_recovery_system = ErrorRecoverySystem(None)  # Node reference would be passed in a full ROS setup
+
     logger.info("All services initialized successfully")
 except Exception as e:
     logger.error(f"Error initializing services: {e}")
@@ -31,6 +36,7 @@ except Exception as e:
     embedding_service = None
     retrieval_service = None
     vector_store_service = None
+    error_recovery_system = None
 
 # Include the RAG router
 app.include_router(rag_app, prefix="/api/v1", tags=["rag"])

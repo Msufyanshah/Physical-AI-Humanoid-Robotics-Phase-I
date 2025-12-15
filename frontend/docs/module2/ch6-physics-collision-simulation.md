@@ -1,6 +1,6 @@
 ---
 title: 'Chapter 6 - Physics, Gravity, and Collision Simulation'
-description: 'Understanding physics simulation for realistic robot interactions'
+description: 'Advanced physics simulation for humanoid robots in Gazebo'
 ---
 
 # Chapter 6: Physics, Gravity, and Collision Simulation
@@ -8,385 +8,564 @@ description: 'Understanding physics simulation for realistic robot interactions'
 ## Learning Objectives
 
 After reading this chapter, you will be able to:
-- Configure physics engines for realistic robot simulation
-- Understand gravity and its effects on robot dynamics
-- Implement collision detection and response mechanisms
-- Tune physical parameters for accurate simulation
-- Analyze and validate physics behavior in simulation
-- Optimize physics simulation for performance
+- Configure realistic physics parameters for humanoid robots
+- Understand collision detection and response mechanisms
+- Implement proper gravity simulation for different environments
+- Model complex interactions like contacts and friction
+- Optimize physics simulation for real-time performance
+- Debug physics-related issues in simulation
+- Validate physical behavior against real-world expectations
+- Handle edge cases like balance and stability in simulation
 
 ## Introduction
 
-Physics simulation is fundamental to creating realistic robotic environments. It determines how robots and objects move, interact, and respond to forces in the simulated world. This chapter explores the physics systems in simulation environments, with a focus on how to configure them for accurate and efficient robot simulation, particularly for complex humanoid robots that require precise dynamics modeling.
+Physics simulation is the backbone of realistic robot simulation. For humanoid robots, accurately modeling physics is essential for developing controllers, testing behaviors, and understanding how robots will behave in the real world. This chapter covers the physics engine configuration, collision systems, and how to achieve realistic simulation of physical interactions that humanoid robots experience.
 
 ## Physics Engine Fundamentals
 
-### Role of Physics Engines in Robotics
+### Understanding Physics Simulation
 
-Physics engines solve complex mathematical problems to simulate:
-- Rigid body dynamics
-- Collision detection and response
-- Joint constraints
-- Contact forces and friction
-- Gravity and other environmental forces
+Physics simulation in Gazebo involves several systems working together:
 
-For humanoid robotics, accurate physics simulation is critical for tasks like walking, manipulation, and balance control.
+1. **Collision Detection**: Identifying when objects intersect
+2. **Contact Calculation**: Determining response forces at contact points
+3. **Dynamics Integration**: Updating positions and velocities based on forces
+4. **Constraint Solving**: Maintaining joint and contact constraints
 
-### Common Physics Engines
+### Core Physics Parameters
 
-#### Open Dynamics Engine (ODE)
-- Well-established, widely used in robotics
-- Good balance of accuracy and performance
-- Supports complex joint types
-- Good for contact-rich scenarios
-
-#### Bullet Physics
-- Popular in gaming, also used in robotics
-- Good performance characteristics
-- Robust contact handling
-- Supports soft body dynamics
-
-#### DART (Dynamic Animation and Robotics Toolkit)
-- Modern physics engine designed for robotics
-- Advanced constraint solving
-- Supports complex kinematic chains
-- Good for humanoid simulation
-
-## Gravity and Environmental Forces
-
-### Gravity Configuration
-
-In simulation environments, gravity is typically defined globally in the world file:
+The physics engine in Gazebo has several key parameters that affect simulation realism:
 
 ```xml
-<world name="default">
-  <!-- Physics parameters -->
-  <physics name="default_physics" type="ode">
-    <max_step_size>0.001</max_step_size>
-    <real_time_factor>1</real_time_factor>
-    <real_time_update_rate>1000</real_time_update_rate>
-    <!-- Gravity vector: x, y, z components (m/s^2) -->
-    <gravity>0 0 -9.8</gravity>
-  </physics>
-</world>
+<physics name="default_physics" type="ode">
+  <!-- Time stepping parameters -->
+  <max_step_size>0.001</max_step_size>  <!-- Simulation step size (seconds) -->
+  <real_time_factor>1</real_time_factor>  <!-- Real-time simulation factor -->
+  <real_time_update_rate>1000</real_time_update_rate>  <!-- Updates per sec -->
+  
+  <!-- Gravity -->
+  <gravity>0 0 -9.8</gravity>  <!-- Earth gravity: 9.8 m/s^2 downward -->
+  
+  <!-- Physics engine specific parameters -->
+  <ode>
+    <solver>
+      <type>quick</type>  <!-- Type of solver (quick, PGS, etc.) -->
+      <iters>100</iters>  <!-- Number of iterations for constraint solving -->
+      <sor>1.3</sor>      <!-- Successive over-relaxation parameter -->
+    </solver>
+    <constraints>
+      <cfm>0.0</cfm>  <!-- Constraint force mixing parameter -->
+      <erp>0.2</erp>  <!-- Error reduction parameter (0-1) -->
+      <!-- Maximum correcting velocity for contacts -->
+      <contact_max_correcting_vel>100.0</contact_max_correcting_vel>
+      <!-- Contact surface layer thickness -->
+      <contact_surface_layer>0.001</contact_surface_layer>
+    </constraints>
+  </ode>
+</physics>
 ```
 
-For humanoid robots, the default Earth gravity of 9.8 m/s² in the negative Z direction is typically used. However, you may want to simulate different gravity conditions:
+### Time Step Considerations
+
+The simulation time step is critical for stability:
+
+- **Smaller time steps**: More accurate but computationally expensive
+- **Larger time steps**: Faster but potentially unstable
+- **Recommended**: 0.001s (1ms) for precise humanoid simulation
+- **Maximum**: 0.01s (10ms) for real-time performance
 
 ```xml
-<!-- Moon gravity -->
-<gravity>0 0 -1.62</gravity>
+<!-- For precise humanoid control (e.g., balance) -->
+<max_step_size>0.001</max_step_size>
+<real_time_update_rate>1000</real_time_update_rate>
 
-<!-- Mars gravity -->
-<gravity>0 0 -3.71</gravity>
-
-<!-- Zero gravity (space simulation) -->
-<gravity>0 0 0</gravity>
-```
-
-### Custom Forces
-
-In addition to gravity, you can apply custom force fields or air resistance:
-
-```xml
-<!-- In a model definition -->
-<plugin name="custom_force" filename="libCustomForcePlugin.so">
-  <force_vector>0 0 -10</force_vector>  <!-- Constant downward force -->
-  <damping_coefficient>0.1</damping_coefficient>
-</plugin>
+<!-- For faster simulation with less precision -->
+<max_step_size>0.01</max_step_size>
+<real_time_update_rate>100</real_time_update_rate>
 ```
 
 ## Collision Detection Systems
 
-### Collision Geometry Types
+### Types of Collisions
 
-Different geometric shapes provide various levels of accuracy and performance:
+Gazebo supports different collision detection methods:
 
-#### Primitive Shapes (Box, Sphere, Cylinder)
+1. **Surface-based**: Contacts between surfaces
+2. **Ray-based**: Ray intersections for sensor simulation
+3. **Point-based**: Discrete point contacts
+
+### Collision Properties
+
+Properly configured collision properties are essential for realistic simulation:
+
 ```xml
-<collision name="collision_box">
+<!-- Example collision configuration -->
+<collision name="collision">
   <geometry>
     <box>
-      <size>0.5 0.3 0.2</size>
+      <size>0.2 0.1 0.3</size>
     </box>
   </geometry>
+  
+  <!-- Surface properties -->
+  <surface>
+    <friction>
+      <ode>
+        <mu>0.5</mu>      <!-- Static friction coefficient -->
+        <mu2>0.4</mu2>    <!-- Dynamic friction coefficient -->
+        <fdir1>1 0 0</fdir1>  <!-- Direction of friction -->
+        <slip1>0.0</slip1>    <!-- Primary slip coefficient -->
+        <slip2>0.0</slip2>    <!-- Secondary slip coefficient -->
+      </ode>
+    </friction>
+    
+    <bounce>
+      <restitution_coefficient>0.1</restitution_coefficient>
+      <threshold>100000.0</threshold>
+    </bounce>
+    
+    <contact>
+      <ode>
+        <soft_erp>0.2</soft_erp>              <!-- Contact error reduction -->
+        <soft_cfm>0.000001</soft_cfm>         <!-- Contact constraint force mixing -->
+        <kp>1000000000000.0</kp>              <!-- Contact stiffness -->
+        <kd>1000000000000.0</kd>              <!-- Contact damping -->
+        <max_vel>100.0</max_vel>              <!-- Maximum contact correction velocity -->
+        <min_depth>0.001</min_depth>          <!-- Penetration depth tolerance -->
+        <max_contacts>20</max_contacts>        <!-- Maximum contacts per collision -->
+      </ode>
+    </contact>
+  </surface>
 </collision>
 ```
 
-Advantages:
-- Fast collision detection
-- Predictable behavior
-- Good for simple objects
+### Collision Geometry Selection
 
-Disadvantages:
-- Less accurate for complex shapes
+Choosing the right collision geometry is important for both accuracy and performance:
 
-#### Mesh Geometry
 ```xml
-<collision name="collision_mesh">
+<!-- For simple objects, use basic primitives -->
+<collision name="simple_collision">
+  <geometry>
+    <cylinder>
+      <radius>0.1</radius>
+      <length>0.3</length>
+    </cylinder>
+  </geometry>
+</collision>
+
+<!-- For complex shapes, use convex hull decomposition -->
+<collision name="complex_collision">
   <geometry>
     <mesh>
-      <uri>model://my_robot/meshes/complex_part.dae</uri>
+      <uri>file://meshes/complex_part.stl</uri>
+      <scale>1.0 1.0 1.0</scale>
+    </mesh>
+  </geometry>
+</collision>
+
+<!-- For performance, use simplified collision meshes -->
+<collision name="simplified_collision">
+  <geometry>
+    <mesh>
+      <uri>file://meshes/complex_part_simple_collision.stl</uri>
+      <scale>1.0 1.0 1.0</scale>
     </mesh>
   </geometry>
 </collision>
 ```
 
-Advantages:
-- Most accurate representation
-- Matches visual geometry
+## Gravity Configuration
 
-Disadvantages:
-- Computationally expensive
-- May cause instability
+### Gravity in Different Environments
 
-### Collision Layers and Filtering
-
-You can configure which objects should collide with each other:
+While Earth's gravity is approximately 9.8 m/s², different environments may require different gravitational settings:
 
 ```xml
-<collision name="collision_part" collide_without_contact="false">
-  <surface>
-    <contact>
-      <collide_bitmask>0x01</collide_bitmask>  <!-- Collision layer -->
-    </contact>
-  </surface>
-</collision>
+<!-- Standard Earth gravity -->
+<gravity>0 0 -9.8</gravity>
+
+<!-- Moon gravity (~1/6 of Earth) -->
+<gravity>0 0 -1.62</gravity>
+
+<!-- Mars gravity -->
+<gravity>0 0 -3.71</gravity>
+
+<!-- Zero gravity (for space simulation) -->
+<gravity>0 0 0</gravity>
+
+<!-- Custom gravity vector (for simulation of accelerating frames) -->
+<gravity>0 -9.8 0</gravity>  <!-- Horizontal gravity -->
 ```
 
-### Contact Parameters
+### Gravity Considerations for Humanoid Robots
 
-Fine-tune collision response with contact parameters:
+Gravity is particularly important for humanoid robots because:
+
+1. **Balance Control**: Critical for maintaining upright posture
+2. **Locomotion**: Affects walking dynamics and gait stability
+3. **Manipulation**: Influences how objects behave during manipulation
+4. **Energy Consumption**: Affects required actuator forces
 
 ```xml
-<collision name="collision_part">
-  <!-- ... geometry definition ... -->
-  <surface>
-    <friction>
-      <ode>
-        <mu>0.5</mu>        <!-- Static friction coefficient -->
-        <mu2>0.4</mu2>      <!-- Dynamic friction coefficient -->
-        <fdir1>1 0 0</fdir1> <!-- Friction direction -->
-        <slip1>0.0</slip1>   <!-- Primary slip coefficient -->
-        <slip2>0.0</slip2>   <!-- Secondary slip coefficient -->
-      </ode>
-    </friction>
-    <bounce>
-      <restitution_coefficient>0.1</restitution_coefficient> <!-- Bounciness -->
-      <threshold>100000.0</threshold> <!-- Velocity threshold for bouncing -->
-    </bounce>
-    <contact>
-      <ode>
-        <soft_cfm>0.000001</soft_cfm>     <!-- Constraint Force Mixing -->
-        <soft_erp>0.2</soft_erp>          <!-- Error Reduction Parameter -->
-        <kp>1000000000000.0</kp>          <!-- Contact stiffness -->
-        <kd>1000000000000.0</kd>          <!-- Contact damping -->
-        <max_vel>100.0</max_vel>          <!-- Maximum contact correction velocity -->
-        <min_depth>0.001</min_depth>      <!-- Penetration depth tolerance -->
-      </ode>
-    </contact>
-  </surface>
-</collision>
+<!-- Advanced gravity configuration for humanoid testing -->
+<world name="humanoid_test_world">
+  <include>
+    <uri>model://ground_plane</uri>
+  </include>
+  
+  <gravity>0 0 -9.8</gravity>  <!-- Standard Earth gravity -->
+  
+  <physics name="humanoid_physics" type="ode">
+    <max_step_size>0.001</max_step_size>
+    <real_time_factor>1</real_time_factor>
+    <real_time_update_rate>1000</real_time_update_rate>
+    
+    <ode>
+      <solver>
+        <type>quick</type>
+        <iters>100</iters>
+        <sor>1.3</sor>
+      </solver>
+      <constraints>
+        <cfm>0.000001</cfm>
+        <erp>0.2</erp>
+        <contact_max_correcting_vel>100.0</contact_max_correcting_vel>
+        <contact_surface_layer>0.001</contact_surface_layer>
+      </constraints>
+    </ode>
+  </physics>
+  
+  <!-- Add humanoid robot model here -->
+  <include>
+    <uri>model://humanoid_robot</uri>
+  </include>
+</world>
 ```
 
-## Dynamics and Joint Constraints
+## Joint Dynamics and Constraints
 
-### Joint Dynamics
+### Joint Limit Configuration
 
-For realistic robot simulation, joint dynamics must be carefully configured:
+Proper joint limits prevent damage and ensure realistic movement:
 
 ```xml
-<joint name="shoulder_pitch" type="revolute">
-  <parent link="torso"/>
-  <child link="upper_arm"/>
-  <origin xyz="0.0 0.15 0.1" rpy="0 0 0"/>
-  <axis xyz="0 1 0"/>
-  <limit lower="-2.356" upper="1.571" effort="200" velocity="2.0"/>
-  <dynamics damping="1.0" friction="0.2"/>
+<joint name="knee_joint" type="revolute">
+  <parent>tibia</parent>
+  <child>fibula</child>
+  <axis>
+    <xyz>0 1 0</xyz>  <!-- Rotation about Y axis -->
+    <limit>
+      <lower>0.0</lower>      <!-- Fully extended -->
+      <upper>2.5</upper>      <!-- Fully bent (143 degrees) -->
+      <effort>200.0</effort>  <!-- Maximum torque in N*m -->
+      <velocity>3.0</velocity> <!-- Maximum velocity in rad/s -->
+    </limit>
+    <dynamics>
+      <damping>1.0</damping>    <!-- Damping coefficient -->
+      <friction>0.5</friction>  <!-- Static friction -->
+    </dynamics>
+  </axis>
 </joint>
 ```
 
-### Actuator Modeling
+### Joint Safety Margins
 
-To model real actuators in simulation:
+For humanoid robots, it's important to implement safety margins:
 
 ```xml
-<!-- In URDF with Gazebo plugin -->
-<gazebo reference="shoulder_pitch">
-  <provideFeedback>true</provideFeedback>
-  <implicitSpringDamper>1</implicitSpringDamper>
-  <mu1>100000.0</mu1>
-  <mu2>100000.0</mu2>
-</gazebo>
-
-<!-- For more complex actuator models -->
-<gazebo>
-  <plugin name="joint_trajectory_controller" filename="libgazebo_ros_control.so">
-    <robotNamespace>/my_robot</robotNamespace>
-    <robotSimType>gazebo_ros_control/DefaultRobotHWSim</robotSimType>
-  </plugin>
-</gazebo>
+<!-- Soft joint limits to prevent harsh stops -->
+<joint name="hip_pitch" type="revolute">
+  <parent>pelvis</parent>
+  <child>femur</child>
+  <axis>
+    <xyz>1 0 0</xyz>
+    <limit>
+      <lower>-1.0</lower>  <!-- Lower hard limit -->
+      <upper>0.8</upper>   <!-- Upper hard limit -->
+      <effort>300.0</effort>
+      <velocity>2.0</velocity>
+    </limit>
+    <safety_controller>
+      <k_position>10</k_position>    <!-- Position gain -->
+      <k_velocity>1</k_velocity>     <!-- Velocity gain -->
+      <soft_lower_limit>-0.9</soft_lower_limit>  <!-- Soft limit before hard limit -->
+      <soft_upper_limit>0.7</soft_upper_limit>   <!-- Soft limit before hard limit -->
+    </safety_controller>
+    <dynamics>
+      <damping>2.0</damping>
+      <friction>1.0</friction>
+    </dynamics>
+  </axis>
+</joint>
 ```
 
-## Balancing Accuracy and Performance
+## Collision Handling and Contact Simulation
 
-### Time Step Considerations
+### Contact Properties
 
-The simulation time step affects both accuracy and performance:
+Contacts between surfaces are critical for humanoid robots, especially for walking and manipulation:
 
 ```xml
-<!-- Smaller time steps = more accurate but slower -->
-<physics name="default_physics" type="ode">
-  <max_step_size>0.001</max_step_size>  <!-- 1ms time step -->
+<link name="foot_link">
+  <collision name="foot_collision">
+    <geometry>
+      <box>
+        <size>0.15 0.08 0.01</size>  <!-- Flat foot for stability -->
+      </box>
+    </geometry>
+    
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>  <!-- High friction for stable standing/walking -->
+          <mu2>0.8</mu2>
+        </ode>
+      </friction>
+      <contact>
+        <ode>
+          <soft_erp>0.8</soft_erp>      <!-- Strong contact correction -->
+          <soft_cfm>0.0001</soft_cfm>   <!-- Low constraint mixing -->
+          <kp>1e+6</kp>                 <!-- High stiffness for firm contact -->
+          <kd>1e+4</kd>                 <!-- Medium damping -->
+          <max_vel>100.0</max_vel>
+          <min_depth>0.001</min_depth>
+        </ode>
+      </contact>
+    </surface>
+  </collision>
+</link>
+```
+
+### Preventing Undesirable Contacts
+
+Sometimes we want to prevent contacts between certain parts:
+
+```xml
+<!-- Disable self-collision between adjacent links -->
+<joint name="adjacent_joint" type="revolute">
+  <parent>link1</parent>
+  <child>link2</child>
+  <!-- Joint definition -->
+  <axis>
+    <xyz>0 0 1</xyz>
+    <limit>
+      <lower>-1.57</lower>
+      <upper>1.57</upper>
+      <effort>100</effort>
+      <velocity>1.0</velocity>
+    </limit>
+  </axis>
+  
+  <!-- Don't generate contacts between adjacent links -->
+  <disable_collisions>
+    <collision1>link1_collision</collision1>
+    <collision2>link2_collision</collision2>
+    <condition>Adjacent</condition>
+  </disable_collisions>
+</joint>
+```
+
+## Inertial Properties for Humanoid Robots
+
+### Mass Distribution
+
+Accurate inertial properties are crucial for humanoid balance:
+
+```xml
+<link name="torso">
+  <inertial>
+    <mass>5.0</mass>
+    <origin xyz="0 0 0.2" rpy="0 0 0"/>
+    <inertia>
+      <ixx>0.2</ixx>
+      <ixy>0.0</ixy>
+      <ixz>0.0</ixz>
+      <iyy>0.2</iyy>
+      <iyz>0.0</iyz>
+      <izz>0.1</izz>
+    </inertia>
+  </inertial>
+  
+  <!-- Visual and collision properties -->
+  <visual name="torso_visual">
+    <geometry>
+      <box size="0.2 0.2 0.4"/>
+    </geometry>
+    <material name="grey"/>
+  </visual>
+  
+  <collision name="torso_collision">
+    <geometry>
+      <box size="0.2 0.2 0.4"/>
+    </geometry>
+  </collision>
+</link>
+```
+
+### Center of Mass Considerations
+
+For humanoid robots, center of mass location is critical for stability:
+
+```xml
+<!-- Head link with high center of mass -->
+<link name="head">
+  <inertial>
+    <mass>1.0</mass>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>  <!-- CoM slightly above center -->
+    <inertia>
+      <ixx>0.003</ixx>  <!-- Moments of inertia for spherical approximation -->
+      <ixy>0.0</ixy>
+      <ixz>0.0</ixz>
+      <iyy>0.003</iyy>
+      <iyz>0.0</iyz>
+      <izz>0.003</izz>
+    </inertia>
+  </inertial>
+</link>
+
+<!-- Pelvis link with low center of mass -->
+<link name="pelvis">
+  <inertial>
+    <mass>6.0</mass>
+    <origin xyz="0 0 -0.05" rpy="0 0 0"/>  <!-- CoM slightly below center -->
+    <inertia>
+      <ixx>0.3</ixx>
+      <ixy>0.0</ixy>
+      <ixz>0.0</ixz>
+      <iyy>0.3</iyy>
+      <iyz>0.0</iyz>
+      <izz>0.2</izz>
+    </inertia>
+  </inertial>
+</link>
+```
+
+## Advanced Physics Configurations
+
+### Custom Physics for Special Scenarios
+
+For specific robot behaviors, custom physics configurations may be needed:
+
+```xml
+<!-- Physics for walking simulation -->
+<physics name="walking_physics" type="ode">
+  <max_step_size>0.001</max_step_size>
   <real_time_factor>1</real_time_factor>
   <real_time_update_rate>1000</real_time_update_rate>
+  <gravity>0 0 -9.8</gravity>
+  
+  <ode>
+    <solver>
+      <type>quick</type>
+      <iters>200</iters>  <!-- More iterations for stability -->
+      <sor>1.2</sor>
+    </solver>
+    <constraints>
+      <cfm>1e-5</cfm>  <!-- Very low constraint force mixing -->
+      <erp>0.1</erp>   <!-- Error reduction for tight constraints -->
+      <contact_max_correcting_vel>50.0</contact_max_correcting_vel>
+      <contact_surface_layer>0.0005</contact_surface_layer>  <!-- Thin layer for precision -->
+    </constraints>
+  </ode>
+</physics>
+
+<!-- Physics for manipulation simulation -->
+<physics name="manipulation_physics" type="ode">
+  <max_step_size>0.0005</max_step_size>  <!-- Smaller steps for precision -->
+  <real_time_factor>0.5</real_time_factor>  <!-- Slower than real-time for accuracy -->
+  <real_time_update_rate>2000</real_time_update_rate>
+  <gravity>0 0 -9.8</gravity>
+  
+  <ode>
+    <solver>
+      <type>quick</type>
+      <iters>300</iters>  <!-- Even more iterations for contact precision -->
+      <sor>1.2</sor>
+    </solver>
+    <constraints>
+      <cfm>1e-6</cfm>  <!-- Extremely low constraint force mixing -->
+      <erp>0.05</erp>  <!-- Aggressive error correction -->
+      <contact_max_correcting_vel>10.0</contact_max_correcting_vel>  <!-- Lower for precision -->
+      <contact_surface_layer>0.0001</contact_surface_layer>  <!-- Very thin layer -->
+    </constraints>
+  </ode>
 </physics>
 ```
 
-For humanoid robots with precise balance requirements, smaller time steps are typically needed.
+## Performance Optimization
 
-### Performance Optimization Strategies
+### Physics Optimization Strategies
 
-1. **Simplify Collision Geometry**: Use primitive shapes where possible
-2. **Adjust Solver Parameters**: Tune for your specific use case
-3. **Limit Update Rate**: Match to actual sensor/actuator rates
-4. **Use Appropriate Masses**: Avoid extreme mass ratios
+For real-time humanoid simulation with complex physics:
 
-## Humanoid-Specific Physics Considerations
+1. **Tune Solver Parameters**: Balance between accuracy and speed
+2. **Use Appropriate Collision Geometries**: Simplify where possible
+3. **Adjust Update Rates**: Match to real sensor/controller rates
+4. **Limit Physics Complexities**: Reduce unnecessary computations
 
-### Center of Mass and Stability
-
-For humanoid robots, accurate center of mass calculation is critical for stable walking:
-
-```xml
-<!-- In each link definition -->
-<inertial>
-  <origin xyz="0.0 0.0 0.05" rpy="0 0 0" />  <!-- Offset from link origin -->
-  <mass value="2.0" />
-  <inertia 
-    ixx="0.01" ixy="0.0" ixz="0.0" 
-    iyy="0.01" iyz="0.0" 
-    izz="0.01" />
-</inertial>
-```
-
-### Walking Dynamics
-
-Walking simulations require special attention:
-- Accurate foot-ground contact modeling
-- Proper mass distribution
-- Appropriate friction coefficients
-- Low center of mass for stability
-
-### Balance Control
-
-Balance control in simulation must account for:
-- Sensor noise and delay
-- Actuator dynamics and limits
-- Ground reaction forces
-- Center of pressure estimation
-
-## Validation and Tuning
-
-### Physics Validation Techniques
-
-1. **Compare to Real Robot**: Validate simulation behavior against real robot
-2. **Energy Analysis**: Ensure energy conservation where appropriate
-3. **Stability Tests**: Verify stable behavior for static poses
-4. **Dynamic Response**: Test with known inputs and verify outputs
-
-### Tuning Process
-
-The tuning process typically involves:
-
-1. **Initial Setup**: Use manufacturer specs for basic parameters
-2. **Static Validation**: Test with the robot in static poses
-3. **Dynamic Validation**: Test with simple movements
-4. **Fine-Tuning**: Adjust parameters based on comparison with real robot
-5. **Iterative Improvement**: Refine parameters through testing
-
-### Parameters to Monitor
-
-- Joint position errors
-- Actuator effort vs. real-world values
-- Stability during static poses
-- Dynamic response characteristics
-
-## Common Physics Simulation Issues
-
-### Instability
-
-Common causes and solutions:
-- **Large mass ratios**: Keep mass ratios reasonable (under 1000:1)
-- **High stiffness**: Reduce contact stiffness if oscillations occur
-- **Small time steps**: Ensure time step is appropriate for the fastest dynamics
-
-### Penetration
-
-Objects passing through each other:
-- Increase contact stiffness (kp)
-- Reduce time step size
-- Use more accurate collision geometry
-
-### Jittery Motion
-
-Unstable joint motion:
-- Adjust damping coefficients
-- Tune solver parameters (CFM, ERP)
-- Check for underconstrained systems
-
-## Chapter Summary
-
-This chapter covered the critical aspects of physics simulation for robotics, with a focus on humanoid applications. We explored gravity and environmental forces, collision detection and response, dynamics and joint constraints, performance optimization, and validation techniques. Proper physics configuration is essential for creating realistic robot simulations that accurately represent real-world behavior.
-
-## Checklist
-
-- [ ] Configure physics engines for accurate robot simulation
-- [ ] Understand gravity and its effects on robot dynamics
-- [ ] Implement collision detection with appropriate parameters
-- [ ] Tune physical parameters for accurate simulation
-- [ ] Optimize performance while maintaining accuracy
-- [ ] Validate physics behavior against real-world expectations
-
-## Exercises
-
-### Exercise 1: Physics Parameter Tuning
-
-Create a simple pendulum simulation and tune the physics parameters to match real-world behavior.
-
-#### Solution
-
-1. Create a pendulum model with appropriate mass and inertia
-2. Set up the simulation with various physics parameters
-3. Run the simulation and measure the period of oscillation
-4. Compare to theoretical calculations and adjust parameters
-
-#### Hints
-
-- The theoretical period of a simple pendulum: T = 2π√(L/g)
-- Adjust damping to match real-world energy loss
-- Consider the effect of time step size on accuracy
-
-### Exercise 2: Collision Detection Testing
-
-Test different collision geometries with a moving robot and compare performance.
-
-#### Solution
-
-1. Create a robot model with different collision geometries (box, mesh, simplified mesh)
-2. Set up a simulation with obstacles
-3. Measure simulation performance and accuracy for each configuration
-4. Analyze the trade-offs between accuracy and performance
-
-#### Hints
-
-- Use primitive shapes for better performance
-- Simplify meshes when possible
-- Consider multi-resolution collision models
-
-## References
-
-- [Gazebo Physics Documentation](http://gazebosim.org/tutorials?tut=physics_ros)
-- [ODE User Guide](https://www.ode.org/wiki/index.php?title=Manual)
-- [Physics-Based Animation by Kenny Erleben et al.](https://www.amazon.com/Physics-Based-Animation-Steffen-Patterson/dp/1598632738)
-- [DART Robotics Simulator](https://dartsim.github.io/)
+```python
+# PhysicsOptimizer class to manage different optimization scenarios
+class PhysicsOptimizer:
+    def __init__(self, gazebo_client):
+        self.gazebo_client = gazebo_client
+        
+        # Different configurations for different scenarios
+        self.configurations = {
+            'realtime_default': {
+                'max_step_size': 0.001,
+                'real_time_factor': 1.0,
+                'real_time_update_rate': 1000,
+                'ode_solver_iters': 100,
+                'ode_cfm': 0.000001,
+                'ode_erp': 0.2
+            },
+            'balance_simulation': {
+                'max_step_size': 0.0005,
+                'real_time_factor': 0.7,
+                'real_time_update_rate': 2000,
+                'ode_solver_iters': 200,
+                'ode_cfm': 0.0000005,
+                'ode_erp': 0.1
+            },
+            'manipulation_simulation': {
+                'max_step_size': 0.0002,
+                'real_time_factor': 0.5,
+                'real_time_update_rate': 5000,
+                'ode_solver_iters': 300,
+                'ode_cfm': 0.0000001,
+                'ode_erp': 0.05
+            }
+        }
+    
+    def switch_configuration(self, config_name: str):
+        """Switch to a different physics configuration"""
+        if config_name not in self.configurations:
+            raise ValueError(f"Unknown configuration: {config_name}")
+        
+        config = self.configurations[config_name]
+        
+        physics_msg = Physics()
+        physics_msg.max_step_size = config['max_step_size']
+        physics_msg.real_time_factor = config['real_time_factor']
+        physics_msg.real_time_update_rate = config['real_time_update_rate']
+        
+        # Set ODE-specific parameters if using ODE physics
+        physics_msg.ode_config.solver_iterations = config['ode_solver_iters']
+        physics_msg.ode_config.contact_surface_layer = config['ode_cfm']
+        physics_msg.ode_config.contact_erp = config['ode_erp']
+        
+        # Apply the physics configuration
+        self.gazebo_client.set_physics(physics_msg)
+        print(f"Switched to {config_name} physics configuration")
+    
+    def optimize_for_scenario(self, scenario: str):
+        """Optimize physics based on scenario"""
+        if scenario == 'walking':
+            self.switch_configuration('balance_simulation')
+        elif scenario == 'manipulation':
+            self.switch_configuration('manipulation_simulation')
+        elif scenario == 'exploration':
+            self.switch_configuration('realtime_default')
+        else:
+            print(f"Unknown scenario: {scenario}")

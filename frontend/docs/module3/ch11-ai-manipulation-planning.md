@@ -1,6 +1,6 @@
 ---
 title: 'Chapter 11 - AI-Powered Manipulation & Bipedal Planning'
-description: 'Advanced AI techniques for robot manipulation and bipedal locomotion planning'
+description: 'Using AI for robot manipulation and bipedal locomotion planning'
 ---
 
 # Chapter 11: AI-Powered Manipulation & Bipedal Planning
@@ -8,209 +8,300 @@ description: 'Advanced AI techniques for robot manipulation and bipedal locomoti
 ## Learning Objectives
 
 After reading this chapter, you will be able to:
-- Understand AI-based approaches for robotic manipulation
-- Implement learning-based grasping and manipulation systems
-- Develop bipedal walking controllers using AI techniques
-- Create motion planning algorithms that incorporate learning
-- Integrate perception and action for manipulation tasks
-- Evaluate and validate AI-powered manipulation and locomotion
-- Optimize AI controllers for real-time robot operation
+- Implement AI-powered grasping and manipulation planning
+- Design bipedal locomotion controllers using AI techniques
+- Apply machine learning algorithms to improve robot behaviors
+- Integrate perception and action planning for manipulation tasks
+- Use reinforcement learning for locomotion optimization
+- Implement cognitive planning for complex multi-step tasks
+- Create adaptive controllers that learn from experience
+- Validate AI controllers against safety requirements
 
 ## Introduction
 
-AI-powered manipulation and bipedal planning represent the frontier of robotics, where artificial intelligence techniques enable robots to perform complex physical tasks with human-like dexterity and adaptability. This chapter explores how deep learning, reinforcement learning, and other AI techniques can be applied to enable robots to grasp objects robustly and walk with stable, adaptive gaits.
+AI-powered manipulation and bipedal planning represent the cutting edge of humanoid robotics, where machine learning algorithms enable robots to perform complex physical tasks with human-like dexterity and adaptability. This chapter explores how to leverage artificial intelligence for two critical humanoid robot capabilities: manipulation (grasping, moving, and interacting with objects) and locomotion (bipedal walking and balance).
 
 ## AI-Powered Manipulation
 
-### Traditional vs. AI-Based Manipulation
+### Traditional vs. AI-Based Manipulation Approaches
 
-Traditional robotic manipulation relies on:
-- Precise forward and inverse kinematics
-- Explicit path planning in configuration space
+Traditional manipulation approaches rely on:
+- Precise geometric models and forward kinematics
 - Hard-coded grasping strategies
-- Deterministic control laws
+- Rule-based grasp selection algorithms
+- Deterministic execution paths
 
-AI-based manipulation utilizes:
-- Learning from experience and demonstration
-- Adaptive grasping strategies
-- End-to-end learning approaches
-- Robust control in uncertain environments
+AI-powered manipulation approaches utilize:
+- Learning from demonstration and experience
+- Deep neural networks for grasp prediction
+- Reinforcement learning for skill acquisition
+- Adaptive behaviors that improve over time
 
-### Deep Learning for Grasping
+### Deep Learning-Based Grasping
 
-Deep learning has revolutionized robotic grasping by enabling robots to learn grasping strategies from data:
+Modern grasp planning systems use deep learning to predict stable grasp configurations:
 
 ```python
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, PointCloud2
-from geometry_msgs.msg import Pose, Point
-from std_msgs.msg import Float64MultiArray
-from cv_bridge import CvBridge
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-import cv2
+from sensor_msgs.msg import Image, PointCloud2
+from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Float32MultiArray
+from cv_bridge import CvBridge
+from scipy.spatial.transform import Rotation as R
+import message_filters
 
 
-class GraspNet(nn.Module):
-    def __init__(self, input_channels=3):
-        super(GraspNet, self).__init__()
+class GraspPredictionNetwork(nn.Module):
+    """Deep neural network for predicting grasp quality and pose"""
+    
+    def __init__(self, input_channels=4):  # RGB + depth
+        super(GraspPredictionNetwork, self).__init__()
         
-        # Convolutional layers for feature extraction
-        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=5, stride=2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2)
+        # Feature extraction from RGB-D input
+        self.feature_extractor = nn.Sequential(
+            # First convolution block
+            nn.Conv2d(input_channels, 32, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            # Second convolution block
+            nn.Conv2d(32, 64, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            # Third convolution block
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )
         
-        # Calculate the size of flattened features
-        conv_output_size = 128 * 8 * 8  # Assuming input is 128x128
+        # Calculate the dimension after convolutions
+        # With 224x224 input and the above layers: 224/2/2/2 = 28x28 feature map
+        # With 128 channels, fc_input_dim = 128 * 28 * 28
+        self.fc_input_dim = 128 * 28 * 28  # This needs to be calculated based on actual input size
         
         # Fully connected layers for grasp prediction
-        self.fc1 = nn.Linear(conv_output_size, 512)
-        self.fc2 = nn.Linear(512, 256)
-        
-        # Output: grasp quality (0-1) and grasp angle (in radians)
-        self.fc_quality = nn.Linear(256, 1)
-        self.fc_angle = nn.Linear(256, 1)
-        
+        self.grasp_predictor = nn.Sequential(
+            nn.Linear(self.fc_input_dim, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 5)  # Output: [quality, x, y, angle, width]
+        )
+    
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        features = self.feature_extractor(x)
+        features = features.view(features.size(0), -1)  # Flatten
+        grasp_predictions = self.grasp_predictor(features)
         
-        x = x.view(x.size(0), -1)  # Flatten
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        # Sigmoid activation for quality (0-1) and tanh for other outputs
+        grasp_qualities = torch.sigmoid(grasp_predictions[:, 0]).unsqueeze(1)
+        grasp_params = torch.tanh(grasp_predictions[:, 1:])  # Other parameters
         
-        quality = torch.sigmoid(self.fc_quality(x))  # Grasp quality [0, 1]
-        angle = torch.tanh(self.fc_angle(x)) * np.pi  # Grasp angle [-π, π]
-        
-        return quality, angle
+        return torch.cat([grasp_qualities, grasp_params], dim=1)
 
 
-class DeepGraspingNode(Node):
+class AIGraspingNode(Node):
+    """Node implementing AI-powered grasping"""
+    
     def __init__(self):
-        super().__init__('deep_grasping')
+        super().__init__('ai_grasping_node')
         
         self.bridge = CvBridge()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Load pre-trained grasp network
-        self.grasp_net = GraspNet(input_channels=4)  # RGB + depth
-        # In practice, you would load a trained model here
-        # self.grasp_net.load_state_dict(torch.load('grasp_model.pth'))
-        self.grasp_net.to(self.device)
-        self.grasp_net.eval()
+        # Initialize neural network
+        self.grasp_model = GraspPredictionNetwork()
+        
+        # Load pretrained model weights (in practice)
+        # self.grasp_model.load_state_dict(torch.load('grasp_model_weights.pth'))
+        # self.grasp_model.eval()
         
         # Robot state
-        self.current_image = None
-        self.current_depth = None
-        self.camera_matrix = None
+        self.robot_joints = {}
+        self.object_poses = {}
+        self.camera_pose = None
         
         # Subscribers
-        self.image_sub = self.create_subscription(
-            Image,
-            '/camera/rgb/image_raw',
-            self.image_callback,
-            10
-        )
+        self.rgb_sub = message_filters.Subscriber(self, Image, '/camera/rgb/image_raw')
+        self.depth_sub = message_filters.Subscriber(self, Image, '/camera/depth/image_raw')
         
-        self.depth_sub = self.create_subscription(
-            Image,
-            '/camera/depth/image_raw',
-            self.depth_callback,
-            10
+        # Use message filters to synchronize RGB and depth images
+        self.sync = message_filters.ApproximateTimeSynchronizer(
+            [self.rgb_sub, self.depth_sub], queue_size=10, slop=0.1
         )
+        self.sync.registerCallback(self.camera_callback)
         
-        # Publishers
-        self.grasp_candidate_pub = self.create_publisher(
-            Float64MultiArray,
-            '/grasp_candidates',
-            10
-        )
+        # Publisher for grasp proposals
+        self.grasp_proposals_pub = self.create_publisher(Float32MultiArray, '/grasp_proposals', 10)
+        self.best_grasp_pub = self.create_publisher(PoseStamped, '/best_grasp_pose', 10)
         
-        # Timer for grasp detection
-        self.grasp_timer = self.create_timer(1.0, self.detect_grasps)
+        self.get_logger().info("AI Grasp Node initialized")
     
-    def image_callback(self, msg):
-        """Process RGB image for grasping"""
+    def camera_callback(self, rgb_msg, depth_msg):
+        """Process synchronized RGB and depth images"""
+        
         try:
-            self.current_image = self.bridge.imgmsg_to_cv2(msg, 'rgb8')
+            # Convert ROS images to OpenCV
+            rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
+            depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+            
+            # Process images for grasp prediction
+            grasp_proposals = self.predict_grasps(rgb_image, depth_image)
+            
+            if grasp_proposals:
+                # Find best grasp based on quality score
+                best_grasp = max(grasp_proposals, key=lambda x: x['quality'])
+                
+                # Convert to world coordinates
+                world_grasp_pose = self.image_to_world_pose(best_grasp, depth_image)
+                
+                if world_grasp_pose:
+                    # Publish best grasp
+                    grasp_pose_msg = PoseStamped()
+                    grasp_pose_msg.header.stamp = rgb_msg.header.stamp
+                    grasp_pose_msg.header.frame_id = 'map'
+                    grasp_pose_msg.pose = world_grasp_pose
+                    
+                    self.best_grasp_pub.publish(grasp_pose_msg)
+                    
+                    # Log grasp info
+                    self.get_logger().info(
+                        f"Best grasp: Quality={best_grasp['quality']:.3f}, "
+                        f"Position=({best_grasp['x']:.2f}, {best_grasp['y']:.2f}, {best_grasp['z']:.2f})"
+                    )
+            
         except Exception as e:
-            self.get_logger().error(f"Error processing image: {e}")
+            self.get_logger().error(f"Error in camera callback: {e}")
     
-    def depth_callback(self, msg):
-        """Process depth image for grasping"""
-        try:
-            self.current_depth = self.bridge.imgmsg_to_cv2(msg, 'passthrough')
-        except Exception as e:
-            self.get_logger().error(f"Error processing depth: {e}")
-    
-    def preprocess_input(self, rgb_image, depth_image):
-        """Preprocess RGB and depth images for the network"""
-        # Resize images to network input size
-        input_size = (128, 128)
-        rgb_resized = cv2.resize(rgb_image, input_size)
-        depth_resized = cv2.resize(depth_image, input_size)
+    def predict_grasps(self, rgb_image, depth_image):
+        """Predict grasp candidates using the AI model"""
         
-        # Normalize RGB image
-        rgb_normalized = rgb_resized.astype(np.float32) / 255.0
+        # Preprocess images
+        processed_input = self.preprocess_images(rgb_image, depth_image)
         
-        # Normalize depth image (assuming 10 meter max range)
-        depth_normalized = depth_resized.astype(np.float32) / 10.0
-        
-        # Stack RGB and depth
-        input_tensor = np.concatenate([
-            rgb_normalized,
-            np.expand_dims(depth_normalized, axis=2)  # Add channel dimension
-        ], axis=2)
-        
-        # Change to CHW format (channel, height, width)
-        input_tensor = np.transpose(input_tensor, (2, 0, 1))
-        
-        # Add batch dimension
-        input_tensor = np.expand_dims(input_tensor, axis=0)
-        
-        return torch.tensor(input_tensor, dtype=torch.float32).to(self.device)
-    
-    def detect_grasps(self):
-        """Detect potential grasp points using deep network"""
-        if self.current_image is None or self.current_depth is None:
-            return
-        
-        # Preprocess input
-        input_tensor = self.preprocess_input(self.current_image, self.current_depth)
+        if processed_input is None:
+            return []
         
         # Run inference
         with torch.no_grad():
-            quality, angle = self.grasp_net(input_tensor)
+            grasp_outputs = self.grasp_model(processed_input)
         
-        # Convert to numpy for further processing
-        grasp_quality = quality.cpu().numpy()[0, 0]
-        grasp_angle = angle.cpu().numpy()[0, 0]
+        # Convert neural network outputs to grasp proposals
+        grasp_proposals = self.convert_to_grasp_proposals(grasp_outputs)
         
-        # Publish grasp candidates
-        grasp_msg = Float64MultiArray()
-        grasp_msg.data = [float(grasp_quality), float(grasp_angle)]
+        return grasp_proposals
+    
+    def preprocess_images(self, rgb_image, depth_image):
+        """Preprocess RGB and depth images for the neural network"""
+        try:
+            # Resize images
+            target_size = (224, 224)
+            resized_rgb = cv2.resize(rgb_image, target_size)
+            resized_depth = cv2.resize(depth_image, target_size)
+            
+            # Normalize RGB
+            rgb_normalized = resized_rgb.astype(np.float32) / 255.0
+            
+            # Normalize depth (assuming depth in meters with max of 5m)
+            depth_normalized = resized_depth.astype(np.float32) / 5.0
+            
+            # Convert to tensor format (CHW)
+            rgb_tensor = torch.tensor(rgb_normalized).permute(2, 0, 1).float()
+            depth_tensor = torch.tensor(depth_normalized).unsqueeze(0).float()  # Add channel dimension
+            
+            # Stack RGB and depth
+            input_tensor = torch.cat([rgb_tensor, depth_tensor], dim=0).unsqueeze(0)  # Add batch dimension
+            
+            return input_tensor
+            
+        except Exception as e:
+            self.get_logger().error(f"Error preprocessing images: {e}")
+            return None
+    
+    def convert_to_grasp_proposals(self, grasp_outputs):
+        """Convert neural network outputs to grasp proposals"""
+        grasp_proposals = []
         
-        self.grasp_candidate_pub.publish(grasp_msg)
+        # In practice, this would decode the grasp predictions based on the network architecture
+        # For this example, we'll return a placeholder implementation
         
-        self.get_logger().info(
-            f"Grasp detected: quality={grasp_quality:.3f}, angle={grasp_angle:.3f}rad"
-        )
+        # Extract grasp proposals from the network output
+        # Format: [quality, x, y, angle, width] for each proposal
+        
+        for i in range(grasp_outputs.shape[0]):  # For each batch item
+            for j in range(grasp_outputs.shape[1] // 5):  # 5 parameters per grasp
+                start_idx = j * 5
+                end_idx = start_idx + 5
+                grasp_data = grasp_outputs[i, start_idx:end_idx]
+                
+                grasp_proposal = {
+                    'quality': float(grasp_data[0]),  # Quality (0-1)
+                    'x': float(grasp_data[1]),       # X position (normalized)
+                    'y': float(grasp_data[2]),       # Y position (normalized)
+                    'angle': float(grasp_data[3]),   # Grasp angle (normalized to -1,1)
+                    'width': float(grasp_data[4])    # Grasp width (normalized)
+                }
+                
+                if grasp_proposal['quality'] > 0.5:  # Only return high-quality grasps
+                    grasp_proposals.append(grasp_proposal)
+        
+        return grasp_proposals
+    
+    def image_to_world_pose(self, grasp, depth_image):
+        """Convert image coordinates to world pose"""
+        # This would require camera parameters and transformation matrices
+        # For now, return a placeholder implementation
+        
+        if not self.camera_pose or depth_image is None:
+            return None
+        
+        # Get 3D position from depth at grasp location
+        u = int(grasp['x'] * depth_image.shape[1])  # Convert normalized to pixel coordinates
+        v = int(grasp['y'] * depth_image.shape[0])
+        
+        if 0 <= u < depth_image.shape[1] and 0 <= v < depth_image.shape[0]:
+            z = depth_image[v, u]  # Depth value at (u,v)
+            
+            if z > 0:  # Valid depth
+                # Convert to 3D position using camera intrinsics
+                # This would use actual camera parameters in practice
+                x = (u - 320) * z / 554.0  # Placeholder camera parameters
+                y = (v - 240) * z / 554.0
+                
+                # Create pose in camera frame
+                pose_in_camera = np.array([x, y, z, 1.0])  # Homogeneous coordinates
+                
+                # Transform to world frame using camera pose
+                # This would use actual transformation matrix
+                world_pose = Pose()  # Placeholder
+                world_pose.position.x = pose_in_camera[0]
+                world_pose.position.y = pose_in_camera[1]
+                world_pose.position.z = pose_in_camera[2]
+                
+                # Set orientation based on grasp angle
+                angle = grasp['angle'] * np.pi  # Convert from normalized to radians
+                world_pose.orientation = R.from_euler('z', angle).as_quat(canonical=True)
+                
+                return world_pose
+        
+        return None
 
 
 def main(args=None):
     rclpy.init(args=args)
-    grasping_node = DeepGraspingNode()
+    node = AIGraspingNode()
     
     try:
-        rclpy.spin(grasping_node)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        node.get_logger().info("AI Grasping node shutting down...")
     finally:
-        grasping_node.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 
@@ -218,823 +309,1269 @@ if __name__ == '__main__':
     main()
 ```
 
-### Reinforcement Learning for Manipulation
+## Bipedal Locomotion with AI
 
-Reinforcement learning can be used to teach robots complex manipulation skills through trial and error:
+### Physics-Informed AI Controllers
+
+For bipedal walking, physics-based models and AI controllers work together:
 
 ```python
+# bipedal_controller.py
+import rclpy
+from rclpy.node import Node
+import numpy as np
+from geometry_msgs.msg import Twist, Vector3
+from sensor_msgs.msg import JointState, Imu
+from std_msgs.msg import Float32MultiArray
+from builtin_interfaces.msg import Duration
+from scipy.spatial.transform import Rotation as R
+import math
+
+
+class BipedalController(Node):
+    """AI-powered bipedal locomotion controller"""
+    
+    def __init__(self):
+        super().__init__('bipedal_controller')
+        
+        # Walking gait parameters
+        self.declare_parameter('step_height', 0.05)  # meters
+        self.declare_parameter('step_length', 0.3)   # meters
+        self.declare_parameter('step_duration', 1.0)  # seconds
+        self.declare_parameter('stance_width', 0.2)  # distance between feet (meters)
+        self.declare_parameter('control_frequency', 50)  # Hz
+        
+        self.step_height = self.get_parameter('step_height').value
+        self.step_length = self.get_parameter('step_length').value
+        self.step_duration = self.get_parameter('step_duration').value
+        self.stance_width = self.get_parameter('stance_width').value
+        self.control_frequency = self.get_parameter('control_frequency').value
+        
+        # Robot state
+        self.current_pose = None
+        self.current_twist = None
+        self.current_joints = {}
+        self.imu_data = None
+        self.desired_velocity = Twist()  # Commanded velocity
+        self.gait_phase = 0.0  # Current phase of gait cycle (0 to 1)
+        
+        # Robot physical parameters
+        self.leg_length = 0.8  # meters (approximate)
+        self.com_height = 0.85  # meters (approximate center of mass)
+        
+        # ZMP (Zero Moment Point) controller
+        self.zmp_controller = ZMPController(com_height=self.com_height)
+        
+        # PID controllers for each joint
+        self.joint_pids = self.initialize_joint_pids()
+        
+        # Subscribers
+        self.joint_state_sub = self.create_subscription(
+            JointState, '/joint_states', self.joint_state_callback, 10
+        )
+        
+        self.imu_sub = self.create_subscription(
+            Imu, '/imu/data', self.imu_callback, 10
+        )
+        
+        self.velocity_cmd_sub = self.create_subscription(
+            Twist, '/cmd_vel', self.velocity_cmd_callback, 10
+        )
+        
+        # Publishers
+        self.joint_cmd_pub = self.create_publisher(JointState, '/joint_group_position_controller/commands', 10)
+        self.com_trajectory_pub = self.create_publisher(Float32MultiArray, '/com_trajectory', 10)
+        
+        # Control timer
+        self.control_timer = self.create_timer(1.0/self.control_frequency, self.control_loop)
+        
+        self.get_logger().info("Bipedal controller initialized")
+    
+    def joint_state_callback(self, msg):
+        """Update joint state information"""
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joints[name] = {
+                    'position': msg.position[i],
+                    'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
+                    'effort': msg.effort[i] if i < len(msg.effort) else 0.0
+                }
+    
+    def imu_callback(self, msg):
+        """Update IMU information"""
+        self.imu_data = msg
+    
+    def velocity_cmd_callback(self, msg):
+        """Update desired velocity"""
+        self.desired_velocity = msg
+    
+    def initialize_joint_pids(self):
+        """Initialize PID controllers for each joint"""
+        # Define PID parameters for different joint types
+        pid_params = {
+            'hip_yaw': {'p': 100.0, 'i': 1.0, 'd': 10.0},
+            'hip_roll': {'p': 80.0, 'i': 0.5, 'd': 8.0},
+            'hip_pitch': {'p': 120.0, 'i': 2.0, 'd': 12.0},
+            'knee': {'p': 100.0, 'i': 1.0, 'd': 10.0},
+            'ankle_pitch': {'p': 60.0, 'i': 0.5, 'd': 6.0},
+            'ankle_roll': {'p': 50.0, 'i': 0.3, 'd': 5.0}
+        }
+        
+        pids = {}
+        for joint_name, params in pid_params.items():
+            pids[joint_name] = {
+                'p': params['p'],
+                'i': params['i'], 
+                'd': params['d'],
+                'integral': 0.0,
+                'previous_error': 0.0,
+                'last_time': self.get_clock().now()
+            }
+        
+        return pids
+    
+    def control_loop(self):
+        """Main bipedal control loop"""
+        current_time = self.get_clock().now()
+        
+        # Update gait phase based on walking command
+        if self.desired_velocity.linear.x != 0 or self.desired_velocity.angular.z != 0:
+            self.gait_phase = (self.gait_phase + 0.02) % 1.0  # Advance phase based on time
+        else:
+            # No walking command, hold stance position
+            self.publish_stance_position()
+            return
+        
+        # Calculate desired joint positions based on gait
+        desired_joints = self.calculate_gait_joint_positions()
+        
+        # Calculate balance corrections based on IMU and ZMP
+        if self.imu_data:
+            balance_corrections = self.calculate_balance_control()
+            desired_joints = self.apply_balance_corrections(desired_joints, balance_corrections)
+        
+        # Publish joint commands
+        self.publish_joint_commands(desired_joints)
+        
+        # Publish CoM trajectory for visualization
+        self.publish_com_trajectory()
+    
+    def calculate_gait_joint_positions(self):
+        """Calculate joint positions for current gait phase"""
+        # Calculate walking gait based on desired velocity and current phase
+        desired_positions = {}
+        
+        # Basic walking pattern - in practice would be much more complex
+        # with separate patterns for left and right legs
+        
+        # Calculate step parameters based on desired velocity
+        linear_vel = self.desired_velocity.linear.x
+        angular_vel = self.desired_velocity.angular.z
+        
+        # Convert linear/angular velocity to step parameters
+        scaled_step_length = self.step_length if abs(linear_vel) > 0.01 else 0.0
+        turn_compensation = angular_vel * 0.1  # Simple turn compensation
+        
+        # Calculate swing leg trajectory in gait
+        phase = self.gait_phase
+        
+        # Swing leg trajectory - simplified elliptical path
+        swing_x_offset = scaled_step_length/2 * math.sin(2 * math.pi * phase)
+        swing_z_offset = self.step_height/2 * (1 - math.cos(2 * math.pi * phase))  # Lift leg at mid-swing
+        
+        # Stance leg - remains on ground during stance phase
+        stance_x_offset = -scaled_step_length/2 * math.sin(2 * math.pi * phase)
+        stance_z_offset = 0  # Keep on ground
+        
+        # Apply to specific joints (simplified model)
+        # Left leg swing phase is offset from right leg
+        left_leg_phase = (phase + 0.5) % 1.0  # Left leg lags right leg by half cycle
+        
+        # Hip joints (controls leg swing)
+        desired_positions['left_hip_pitch'] = self.swing_leg_trajectory(
+            left_leg_phase,  # Use phase for left leg
+            scaled_step_length,
+            self.step_height
+        )
+        
+        desired_positions['right_hip_pitch'] = self.swing_leg_trajectory(
+            phase,  # Use phase for right leg
+            scaled_step_length,
+            self.step_height
+        )
+        
+        # Knee joints (controls leg flexing)
+        desired_positions['left_knee'] = self.knee_trajectory(left_leg_phase)
+        desired_positions['right_knee'] = self.knee_trajectory(phase) 
+        
+        # Ankle joints (controls balance and foot placement)
+        desired_positions['left_ankle_pitch'] = self.balance_ankle_pitch(left_leg_phase)
+        desired_positions['right_ankle_pitch'] = self.balance_ankle_pitch(phase)
+        
+        # Balance control through hip and ankle roll
+        com_offset = self.get_desired_com_offset()
+        desired_positions['left_hip_roll'] = com_offset * 0.5  # Distribute COM offset
+        desired_positions['right_hip_roll'] = -com_offset * 0.5
+        
+        return desired_positions
+    
+    def swing_leg_trajectory(self, gait_phase, step_length, step_height):
+        """Calculate the desired hip pitch for a swinging leg"""
+        # Simplified trajectory generation
+        # In practice, would use inverse kinematics for foot trajectory planning
+        
+        # Phase from 0 to 1 maps to complete step cycle
+        # 0.0-0.5: Stance phase (leg on ground)
+        # 0.5-1.0: Swing phase (leg moving forward)
+        
+        if 0.5 <= gait_phase <= 1.0:  # Swing phase
+            # Generate a trajectory that lifts the leg and moves it forward
+            swing_progress = (gait_phase - 0.5) * 2  # Map to 0-1 for swing phase
+            
+            # Sinusoidal trajectory for smooth motion
+            x_offset = step_length/2 * math.sin(math.pi * swing_progress)
+            z_offset = step_height/2 * (1 - math.cos(math.pi * swing_progress))
+            
+            # Convert to hip joint angle (simplified)
+            return math.atan2(z_offset, x_offset)  # Simplified mapping
+        else:  # Stance phase
+            # Keep leg straight or slightly bent for stance
+            return 0.0  # Simplified stance angle
+    
+    def knee_trajectory(self, gait_phase):
+        """Calculate knee position based on gait phase"""
+        # Simplified knee trajectory
+        if 0.5 <= gait_phase <= 1.0:  # Swing phase: knee bends to lift foot
+            swing_progress = (gait_phase - 0.5) * 2  # Map to 0-1 for swing phase
+            
+            # Bend knee during first half of swing, straighten during second half
+            if swing_progress < 0.5:
+                return 0.3 * math.sin(math.pi * swing_progress)  # Bend knee up to 0.3 radians
+            else:
+                return 0.3 * math.sin(math.pi * (1 - swing_progress))  # Straighten knee
+        else:  # Stance phase: keep knee slightly bent for shock absorption
+            return 0.1  # Slight knee bend for compliance
+    
+    def balance_ankle_pitch(self, gait_phase):
+        """Calculate ankle pitch for balance based on gait phase"""
+        # In real implementation, this would use sensor feedback
+        # For this example, use simple gait-based value
+        
+        # During stance phase, adjust ankle for ground contact
+        if 0.0 <= gait_phase < 0.5:
+            # Stance phase - adjust for balance
+            if self.imu_data:
+                # Read orientation from IMU and adjust ankle accordingly
+                roll = self.get_roll_from_imu(self.imu_data)
+                return -roll * 0.8  # Simple balance correction
+            else:
+                return 0.0
+        else:
+            # Swing phase - keep ankle neutral
+            return 0.0
+    
+    def get_roll_from_imu(self, imu_msg):
+        """Extract roll angle from IMU quaternion"""
+        # Convert quaternion to Euler angles
+        rot = R.from_quat([
+            imu_msg.orientation.x,
+            imu_msg.orientation.y,
+            imu_msg.orientation.z,
+            imu_msg.orientation.w
+        ])
+        roll, pitch, yaw = rot.as_euler('xyz')
+        return roll
+    
+    def get_desired_com_offset(self):
+        """Get desired COM offset based on walking direction and balance needs"""
+        # Calculate desired COM offset based on walking direction
+        if self.desired_velocity.angular.z != 0:  # Turning
+            # Shift COM toward inside of turn
+            turn_direction = 1 if self.desired_velocity.angular.z > 0 else -1
+            return turn_direction * 0.05  # 5cm offset for turns
+        
+        # For forward walking, keep COM centered
+        return 0.0
+    
+    def calculate_balance_control(self):
+        """Calculate balance control corrections using IMU and ZMP"""
+        if not self.imu_data:
+            return {}
+        
+        # Simple balance controller based on IMU orientation
+        rotation = R.from_quat([
+            self.imu_data.orientation.x,
+            self.imu_data.orientation.y,
+            self.imu_data.orientation.z,
+            self.imu_data.orientation.w
+        ])
+        roll, pitch, yaw = rotation.as_euler('xyz')
+        
+        # Calculate balance corrections
+        corrections = {
+            'hip_roll': -roll * 1.0,  # Correct for roll orientation
+            'ankle_pitch': -pitch * 0.5,  # Correct for pitch
+            'ankle_roll': -roll * 0.3  # Additional ankle roll for finer balance
+        }
+        
+        return corrections
+    
+    def apply_balance_corrections(self, desired_joints, corrections):
+        """Apply balance corrections to desired joint positions"""
+        corrected_joints = desired_joints.copy()
+        
+        for joint_name, correction in corrections.items():
+            if joint_name in corrected_joints:
+                corrected_joints[joint_name] += correction
+            else:
+                corrected_joints[joint_name] = correction
+        
+        return corrected_joints
+    
+    def publish_joint_commands(self, desired_positions):
+        """Publish joint position commands to robot"""
+        joint_cmd = JointState()
+        joint_cmd.header.stamp = self.get_clock().now().to_msg()
+        joint_cmd.header.frame_id = 'base_link'
+        
+        for joint_name, position in desired_positions.items():
+            joint_cmd.name.append(joint_name)
+            joint_cmd.position.append(position)
+            joint_cmd.velocity.append(0.0)  # For position control, set velocity to 0
+            joint_cmd.effort.append(0.0)   # For position control, effort is determined by controller
+        
+        self.joint_cmd_pub.publish(joint_cmd)
+    
+    def publish_stance_position(self):
+        """Publish neutral stance position when not walking"""
+        joint_cmd = JointState()
+        joint_cmd.header.stamp = self.get_clock().now().to_msg()
+        joint_cmd.header.frame_id = 'base_link'
+        
+        # Neutral standing position
+        neutral_positions = {
+            'left_hip_pitch': 0.0,
+            'right_hip_pitch': 0.0,
+            'left_knee': 0.0,
+            'right_knee': 0.0,
+            'left_ankle_pitch': 0.0,
+            'right_ankle_pitch': 0.0,
+            'left_hip_roll': 0.0,
+            'right_hip_roll': 0.0
+        }
+        
+        for joint_name, position in neutral_positions.items():
+            joint_cmd.name.append(joint_name)
+            joint_cmd.position.append(position)
+            joint_cmd.velocity.append(0.0)
+            joint_cmd.effort.append(0.0)
+        
+        self.joint_cmd_pub.publish(joint_cmd)
+    
+    def publish_com_trajectory(self):
+        """Publish CoM trajectory for visualization"""
+        # Calculate CoM position based on current gait
+        com_msg = Float32MultiArray()
+        com_msg.data = [
+            float(self.current_pose.position.x) if self.current_pose else 0.0,
+            float(self.current_pose.position.y) if self.current_pose else 0.0,
+            float(self.com_height),  # Approximate CoM height
+            float(self.gait_phase)   # Current gait phase
+        ]
+        self.com_trajectory_pub.publish(com_msg)
+
+
+class ZMPController:
+    """Zero Moment Point controller for bipedal balance"""
+    
+    def __init__(self, com_height=0.85):
+        self.com_height = com_height
+        self.gravity = 9.81
+        
+        # Compute the natural frequency of the inverted pendulum
+        self.omega = math.sqrt(self.gravity / self.com_height)
+        
+        # ZMP tracking PID controller
+        self.pid_params = {
+            'p': 1000.0,  # Proportional gain
+            'i': 10.0,    # Integral gain
+            'd': 50.0     # Derivative gain
+        }
+        
+        # PID state
+        self.integral_error = 0.0
+        self.previous_error = 0.0
+        self.last_time = time.time()
+    
+    def compute_desired_zmp(self, com_position, com_velocity, target_com_position):
+        """Compute desired ZMP based on CoM state"""
+        # Inverted pendulum model: ZMP = CoM position - (CoM height / gravity) * CoM acceleration
+        # Simplified for now - just return target position with small offset
+        desired_zmp_x = target_com_position[0] - 0.05  # Small forward offset
+        desired_zmp_y = target_com_position[1]  # Align with CoM in Y
+        
+        return np.array([desired_zmp_x, desired_zmp_y])
+    
+    def compute_balance_correction(self, current_zmp, desired_zmp, com_velocity):
+        """Compute correction to maintain balance using ZMP"""
+        # Calculate error
+        error = desired_zmp - current_zmp
+        
+        # Time differential
+        current_time = time.time()
+        dt = current_time - self.last_time if self.last_time else 0.001
+        self.last_time = current_time
+        
+        if dt <= 0:
+            dt = 0.001  # Default to 1ms if timing issue
+        
+        # PID control
+        self.integral_error += error * dt
+        derivative_error = (error - self.previous_error) / dt if dt != 0 else 0
+        
+        # Apply PID formula
+        correction = (self.pid_params['p'] * error + 
+                     self.pid_params['i'] * self.integral_error + 
+                     self.pid_params['d'] * derivative_error)
+        
+        self.previous_error = error
+        
+        return correction
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = BipedalController()
+    
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Bipedal controller shutting down...")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+## Reinforcement Learning for Locomotion
+
+### Deep Reinforcement Learning for Walking
+
+Using reinforcement learning to learn bipedal walking patterns:
+
+```python
+# rl_locomotion.py
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
+import torch.nn.functional as F
 import random
 from collections import deque
+import gymnasium as gym
 
 
-class ManipulationActorCritic(nn.Module):
+# Actor-Critic network for locomotion
+class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, max_action):
-        super(ManipulationActorCritic, self).__init__()
-        
-        # Actor network (policy)
-        self.actor = nn.Sequential(
+        super(ActorCritic, self).__init__()
+
+        # Shared layers
+        self.shared_layers = nn.Sequential(
             nn.Linear(state_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, action_dim),
-            nn.Tanh()
+            nn.ReLU()
         )
-        
+
+        # Actor network (policy)
+        self.actor_mean = nn.Linear(256, action_dim)
+        self.actor_std = nn.Linear(256, action_dim)
+
         # Critic network (value function)
-        self.critic = nn.Sequential(
-            nn.Linear(state_dim + action_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1)
-        )
-        
+        self.critic = nn.Linear(256, 1)
+
         self.max_action = max_action
 
-    def forward(self, state, action):
-        # Critic forward pass
-        sa = torch.cat([state, action], 1)
-        q_value = self.critic(sa)
-        return q_value
+    def forward(self, state):
+        shared_features = self.shared_layers(state)
+
+        # Actor: mean and std for Gaussian policy
+        action_mean = torch.tanh(self.actor_mean(shared_features)) * self.max_action
+        action_std = F.softplus(self.actor_std(shared_features)) + 1e-5  # Add small value to avoid zero std
+
+        # Critic: state value
+        value = self.critic(shared_features)
+
+        return action_mean, action_std, value
 
     def get_action(self, state):
-        # Actor forward pass
-        action = self.actor(state)
-        return action * self.max_action
+        """Sample action from the policy"""
+        action_mean, action_std, _ = self.forward(state)
+        dist = torch.distributions.Normal(action_mean, action_std)
+        action = dist.sample()
+        log_prob = dist.log_prob(action)
+        return action, log_prob
 
 
-class ManipulationReinforcementLearning:
-    def __init__(self, state_dim, action_dim, max_action=1.0):
+class HindsightExperienceReplay:
+    """Implementation of Hindsight Experience Replay for robotics tasks"""
+    
+    def __init__(self, buffer_size=1000000):
+        self.buffer = deque(maxlen=buffer_size)
+        self.goal_buffer = deque(maxlen=buffer_size)
+    
+    def store_experience(self, state, action, reward, next_state, done, goal):
+        """Store experience with the original goal"""
+        self.buffer.append((state, action, reward, next_state, done, goal))
+    
+    def sample_batch(self, batch_size, k_future=4):
+        """Sample batch with HER (Hindsight Experience Replay)"""
+        batch = random.sample(self.buffer, min(batch_size, len(self.buffer)))
+        
+        # Apply HER by replacing some goals with achieved goals
+        her_batch = []
+        for state, action, reward, next_state, done, original_goal in batch:
+            her_batch.append((state, action, reward, next_state, done, original_goal))
+            
+            # With probability, replace goal with achieved goal (for HER)
+            if random.random() < 0.8 and len(self.buffer) > 10:
+                # Get a random achieved goal from the buffer
+                random_exp = random.choice(self.buffer)
+                random_next_state = random_exp[3]  # next_state from random experience
+                her_batch.append((state, action, reward, next_state, done, random_next_state))
+        
+        return random.sample(her_batch, min(batch_size, len(her_batch)))
+
+
+class RLWalkingAgent:
+    """Reinforcement learning agent for humanoid walking"""
+    
+    def __init__(self, state_dim, action_dim, lr_actor=1e-4, lr_critic=1e-3):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        self.actor_critic = ManipulationActorCritic(state_dim, action_dim, max_action).to(self.device)
-        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=1e-3)
+        self.actor_critic = ActorCritic(state_dim, action_dim, max_action=1.0).to(self.device)
+        self.optimizer_actor = optim.Adam(self.actor_critic.actor_mean.parameters(), lr=lr_actor)
+        self.optimizer_critic = optim.Adam(self.actor_critic.critic.parameters(), lr=lr_critic)
         
-        self.replay_buffer = deque(maxlen=100000)
+        self.replay_buffer = HindsightExperienceReplay()
+        self.gamma = 0.99  # Discount factor
+        self.tau = 0.005   # Soft update parameter
         self.batch_size = 64
         
-    def store_transition(self, state, action, reward, next_state, done):
-        """Store experience in replay buffer"""
-        self.replay_buffer.append((state, action, reward, next_state, done))
+        self.training_steps = 0
+        
+    def get_action(self, state):
+        """Get action from the policy"""
+        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        action, log_prob = self.actor_critic.get_action(state_tensor)
+        return action.cpu().data.numpy().flatten()
     
-    def train(self):
-        """Train the actor-critic network"""
-        if len(self.replay_buffer) < self.batch_size:
+    def update(self):
+        """Update the policy using collected experiences"""
+        if len(self.replay_buffer.buffer) < self.batch_size:
             return
         
         # Sample batch from replay buffer
-        batch = random.sample(self.replay_buffer, self.batch_size)
-        state_batch, action_batch, reward_batch, next_state_batch, done_batch = map(
-            torch.FloatTensor, zip(*batch)
-        )
+        batch = self.replay_buffer.sample_batch(self.batch_size)
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch, goal_batch = zip(*batch)
         
-        state_batch = state_batch.to(self.device)
-        action_batch = action_batch.to(self.device)
-        reward_batch = reward_batch.to(self.device).unsqueeze(1)
-        next_state_batch = next_state_batch.to(self.device)
-        done_batch = done_batch.to(self.device).unsqueeze(1)
+        state_batch = torch.FloatTensor(state_batch).to(self.device)
+        action_batch = torch.FloatTensor(action_batch).to(self.device)
+        reward_batch = torch.FloatTensor(reward_batch).unsqueeze(1).to(self.device)
+        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+        done_batch = torch.BoolTensor(done_batch).unsqueeze(1).to(self.device)
         
-        # Compute target Q value
-        with torch.no_grad():
-            next_action = self.actor_critic.get_action(next_state_batch)
-            target_q = reward_batch + (1 - done_batch) * 0.99 * self.actor_critic(next_state_batch, next_action)
+        # Compute target values
+        _, _, next_values = self.actor_critic(next_state_batch)
+        target_values = reward_batch + (1 - done_batch.float()) * self.gamma * next_values
         
-        # Compute current Q value
-        current_q = self.actor_critic(state_batch, action_batch)
+        # Current values
+        _, _, current_values = self.actor_critic(state_batch)
         
-        # Compute critic loss
-        critic_loss = nn.MSELoss()(current_q, target_q)
+        # Critic loss
+        critic_loss = F.mse_loss(current_values, target_values.detach())
         
-        # Compute actor loss
-        predicted_action = self.actor_critic.get_action(state_batch)
-        actor_loss = -self.actor_critic(state_batch, predicted_action).mean()
+        # Actor loss
+        actions, log_probs = self.actor_critic.get_action(state_batch)
+        _, _, values = self.actor_critic(state_batch)
+        
+        advantage = target_values - values.detach()
+        actor_loss = -(log_probs * advantage).mean()
         
         # Update networks
-        self.optimizer.zero_grad()
-        (critic_loss + actor_loss).backward()
-        self.optimizer.step()
-
-
-class RLGraspingNode(Node):
-    def __init__(self):
-        super().__init__('rl_grasping')
+        self.optimizer_critic.zero_grad()
+        critic_loss.backward()
+        self.optimizer_critic.step()
         
-        # Initialize RL agent
-        # State: [robot_position, object_position, gripper_state, ...]
-        # Action: [dx, dy, dz, gripper_width]
-        self.rl_agent = ManipulationReinforcementLearning(
-            state_dim=10,  # Example: 3D position + 3D orientation + object info
-            action_dim=4,  # Move in 3D + gripper control
-            max_action=0.1  # Max movement per step (10cm)
+        self.optimizer_actor.zero_grad()
+        actor_loss.backward()
+        self.optimizer_actor.step()
+        
+        self.training_steps += 1
+    
+    def train_on_env_data(self, env, episodes=1000):
+        """Train the agent on environment data"""
+        for episode in range(episodes):
+            state, _ = env.reset()
+            episode_reward = 0
+            done = False
+            
+            while not done:
+                action = self.get_action(state)
+                next_state, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+                
+                # Store experience
+                self.replay_buffer.store_experience(state, action, reward, next_state, done, info.get('goal', None))
+                
+                # Update agent
+                self.update()
+                
+                state = next_state
+                episode_reward += reward
+            
+            if episode % 100 == 0:
+                print(f"Episode {episode}, Average Reward: {episode_reward}")
+
+
+class HumanoidEnv(gym.Env):
+    """Gym environment for humanoid robot locomotion"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Define action and observation spaces
+        self.action_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(18,), dtype=np.float32  # 18 joints for both legs and hips
         )
         
-        # Robot simulation interface
-        self.robot_state = None
-        self.object_state = None
-        self.gripper_state = None
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(37,), dtype=np.float32  # 37-dim state: pos(3) + rot(4) + vel(6) + joint_pos(12) + joint_vel(12)
+        )
         
-        # Episode tracking
-        self.episode_step = 0
-        self.max_episode_steps = 100
-        self.episode_reward = 0.0
-        self.is_training = True
+        # Robot physical parameters
+        self.max_episode_steps = 1000
+        self.step_count = 0
+        self.com_height_threshold = 0.3  # Robot has fallen if CoM height drops below this
         
-        # Timer for RL control loop
-        self.rl_timer = self.create_timer(0.1, self.rl_control_loop)
+        # Initialize robot state
+        self.reset()
     
-    def get_robot_state(self):
-        """Get current robot state for RL algorithm"""
-        # In practice, this would interface with the robot
-        # For now, return dummy values
-        return np.random.rand(10).astype(np.float32)  # 10-dim state
+    def reset(self, seed=None, options=None):
+        """Reset the environment to initial state"""
+        super().reset(seed=seed)
+        
+        # Initialize robot in standing position
+        self.robot_state = {
+            'position': np.array([0.0, 0.0, 0.85]),  # Standing at origin with CoM at 0.85m
+            'rotation': np.array([0.0, 0.0, 0.0, 1.0]),  # No rotation
+            'linear_velocity': np.array([0.0, 0.0, 0.0]),
+            'angular_velocity': np.array([0.0, 0.0, 0.0]),
+            'joint_positions': np.zeros(12),  # 12 joints: 6 per leg
+            'joint_velocities': np.zeros(12)
+        }
+        
+        self.step_count = 0
+        
+        return self.get_observation(), {}
     
-    def execute_action(self, action):
-        """Execute RL action on the robot"""
-        # Convert action to robot commands
-        dx, dy, dz, gripper_cmd = action
+    def get_observation(self):
+        """Get the current observation from robot state"""
+        # Flatten the robot state into a single vector
+        obs = np.concatenate([
+            self.robot_state['position'],
+            self.robot_state['rotation'],
+            self.robot_state['linear_velocity'],
+            self.robot_state['angular_velocity'],
+            self.robot_state['joint_positions'],
+            self.robot_state['joint_velocities']
+        ])
         
-        # In practice, send commands to robot
-        # For now, just log the action
-        self.get_logger().info(f"Executing action: [{dx:.3f}, {dy:.3f}, {dz:.3f}, {gripper_cmd:.3f}]")
-        
-        # Simulate the action (in a real system, this would be done on the actual robot)
-        self.robot_state[0] += dx  # Update X position
-        self.robot_state[1] += dy  # Update Y position
-        self.robot_state[2] += dz  # Update Z position
+        return obs
     
-    def calculate_reward(self):
-        """Calculate reward based on current state"""
-        # In practice, this would be based on the actual task
-        # For grasping, reward could be based on:
-        # - Distance to object
-        # - Gripper position relative to object
-        # - Successful grasp detection
+    def step(self, action):
+        """Execute action and return new state"""
+        # Apply action to robot simulation
+        self.apply_action_to_robot(action)
         
-        # Simple example reward: negative distance to target
-        if self.robot_state is not None and self.object_state is not None:
-            distance = np.linalg.norm(
-                self.robot_state[:3] - self.object_state[:3]
-            )
-            reward = -distance  # Negative reward for distance
-        else:
-            reward = 0.0
-        
-        return reward
-    
-    def rl_control_loop(self):
-        """Main RL control loop"""
-        # Get current state
-        current_state = self.get_robot_state()
-        
-        # Get action from RL agent
-        state_tensor = torch.FloatTensor(current_state).unsqueeze(0).to(self.rl_agent.device)
-        action_tensor = self.rl_agent.actor_critic.get_action(state_tensor)
-        action = action_tensor.cpu().numpy()[0]
-        
-        # Execute action
-        self.execute_action(action)
+        # Update physics simulation
+        self.update_physics()
         
         # Calculate reward
         reward = self.calculate_reward()
-        self.episode_reward += reward
         
-        # Check if episode is done (max steps reached or other termination condition)
-        self.episode_step += 1
-        done = self.episode_step >= self.max_episode_steps
+        # Check termination conditions
+        terminated = self.check_termination()
+        truncated = self.step_count >= self.max_episode_steps
         
-        # Store transition if not in first step
-        if hasattr(self, 'previous_state'):
-            self.rl_agent.store_transition(
-                self.previous_state,
-                self.previous_action,
-                reward,
-                current_state,
-                done
-            )
-            
-            # Train the agent
-            if self.is_training:
-                self.rl_agent.train()
+        self.step_count += 1
         
-        # Store current state and action for next iteration
-        self.previous_state = current_state
-        self.previous_action = action
-        
-        if done:
-            # Episode finished, reset
-            self.get_logger().info(f"Episode finished. Total reward: {self.episode_reward:.3f}")
-            self.episode_step = 0
-            self.episode_reward = 0.0
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    rl_grasping_node = RLGraspingNode()
+        return self.get_observation(), reward, terminated, truncated, {}
     
-    try:
-        rclpy.spin(rl_grasping_node)
-    except KeyboardInterrupt:
+    def apply_action_to_robot(self, action):
+        """Apply action to robot simulation (simplified)"""
+        # In a real implementation, this would interface with the robot simulator
+        # For this example, we'll update the joint positions based on the action
+        # and update the overall robot state based on simplified physics
+        
+        # Update joint positions (clipped to reasonable values)
+        self.robot_state['joint_positions'] = np.clip(
+            self.robot_state['joint_positions'] + action[:12] * 0.1,  # Scale down the action
+            -np.pi, np.pi  # Clip to reasonable joint ranges
+        )
+        
+        # Simplified physics: apply forward motion based on leg configuration
+        forward_speed = 0.1 * (action[0] + action[1])  # Based on hip actions
+        self.robot_state['position'][0] += forward_speed / self.control_frequency  # Increment x position
+        
+        # Add some variation based on joint configuration to simulate balance effects
+        balance_effect = np.sum(np.abs(self.robot_state['joint_positions'])) * 0.001
+        self.robot_state['position'][2] -= balance_effect  # Slight CoM height change based on joint positions
+    
+    def update_physics(self):
+        """Update physics simulation (simplified)"""
+        # Simplified physics updates
+        # In a real implementation, this would run the full physics simulation
         pass
-    finally:
-        rl_grasping_node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-## Bipedal Planning and Control
-
-### Dynamics of Bipedal Locomotion
-
-Bipedal locomotion presents unique challenges due to the underactuated nature of walking (the feet are not powered) and the need to maintain balance while moving:
-
-1. **Zero Moment Point (ZMP)**: Critical for balance control
-2. **Capture Point**: Predicts where to place feet to stop
-3. **Linear Inverted Pendulum Model (LIPM)**: Simplified model for walking
-4. **Foot placement strategies**: Critical for stability
-
-### Model Predictive Control (MPC) for Walking
-
-```python
-import numpy as np
-from scipy.optimize import minimize
-from math import sqrt
-
-
-class BipedalMPCController:
-    def __init__(self, robot_mass=70.0, gravity=9.81, com_height=0.85):
-        self.mass = robot_mass
-        self.gravity = gravity
-        self.com_height = com_height
-        self.omega = sqrt(gravity / com_height)  # Natural frequency of inverted pendulum
-        
-        # Walking parameters
-        self.step_length = 0.3  # 30 cm step
-        self.step_width = 0.2  # 20 cm step width
-        self.step_duration = 1.0  # 1 second per step
-        self.dt = 0.01  # 10ms control cycle
-        
-        # MPC parameters
-        self.prediction_horizon = 20  # 20 steps ahead
-        self.control_horizon = 5  # 5 control steps
-    
-    def linear_inverted_pendulum_model(self, x, y, x_dot, y_dot, zmp_x, zmp_y):
-        """Update CoM state using Linear Inverted Pendulum Model"""
-        com_x_ddot = self.omega**2 * (x - zmp_x)
-        com_y_ddot = self.omega**2 * (y - zmp_y)
-        
-        # Integrate
-        x_dot += com_x_ddot * self.dt
-        y_dot += com_y_ddot * self.dt
-        x += x_dot * self.dt
-        y += y_dot * self.dt
-        
-        return x, y, x_dot, y_dot
-    
-    def mpc_objective(self, zmp_sequence, current_state, desired_trajectory):
-        """Objective function for MPC optimization"""
-        # Current state: [com_x, com_y, com_x_dot, com_y_dot]
-        x, y, x_dot, y_dot = current_state
-        
-        total_cost = 0.0
-        
-        for i in range(self.prediction_horizon):
-            zmp_x, zmp_y = zmp_sequence[i*2], zmp_sequence[i*2+1]
-            
-            # Update state
-            x, y, x_dot, y_dot = self.linear_inverted_pendulum_model(
-                x, y, x_dot, y_dot, zmp_x, zmp_y
-            )
-            
-            # Cost: deviation from desired trajectory
-            desired_x, desired_y = desired_trajectory[i]
-            total_cost += (x - desired_x)**2 + (y - desired_y)**2
-        
-        # Add control effort penalty
-        for i in range(self.control_horizon):
-            zmp_x, zmp_y = zmp_sequence[i*2], zmp_sequence[i*2+1]
-            total_cost += 0.01 * (zmp_x**2 + zmp_y**2)
-        
-        return total_cost
-    
-    def plan_step(self, current_com_state, current_support_foot, desired_trajectory):
-        """Plan next step using MPC"""
-        # Initial ZMP sequence (current ZMP repeated)
-        initial_zmp = np.zeros(2 * self.prediction_horizon)
-        
-        # Optimize ZMP trajectory
-        result = minimize(
-            self.mpc_objective,
-            initial_zmp,
-            args=(current_com_state, desired_trajectory),
-            method='SLSQP',
-            options={'disp': False}
-        )
-        
-        optimal_zmp_sequence = result.x
-        
-        # Extract next support foot position based on ZMP
-        next_zmp_x = optimal_zmp_sequence[0]
-        next_zmp_y = optimal_zmp_sequence[1]
-        
-        # For simple walking, alternate feet
-        # In practice, this would consider balance margins and step constraints
-        next_support_position = np.array([next_zmp_x, next_zmp_y, 0.0])
-        
-        return next_support_position, optimal_zmp_sequence
-
-
-class BipedalWalkingNode(Node):
-    def __init__(self):
-        super().__init__('bipedal_walking')
-        
-        # Initialize MPC controller
-        self.mpc_controller = BipedalMPCController()
-        
-        # Robot state
-        self.com_state = np.array([0.0, 0.0, 0.0, 0.0])  # [x, y, x_dot, y_dot]
-        self.support_foot = np.array([0.0, 0.0, 0.0])  # Left foot position
-        self.in_left_support = True  # Which foot is supporting
-        
-        # Walking trajectory
-        self.walk_trajectory = []  # Planned walking path
-        self.trajectory_index = 0
-        
-        # Create publishers for joint commands
-        self.left_leg_pub = self.create_publisher(Float64MultiArray, '/left_leg/commands', 10)
-        self.right_leg_pub = self.create_publisher(Float64MultiArray, '/right_leg/commands', 10)
-        
-        # Walking timer
-        self.walk_timer = self.create_timer(0.01, self.walk_control_loop)
-    
-    def generate_walk_trajectory(self, start_pos, steps_count=10):
-        """Generate a simple forward walking trajectory"""
-        self.walk_trajectory = []
-        
-        step_length = 0.3  # 30cm per step
-        
-        for i in range(steps_count):
-            # Simple straight line walking
-            x = start_pos[0] + (i + 1) * step_length
-            y = start_pos[1]  # Stay on same y
-            self.walk_trajectory.append([x, y])
-        
-        self.trajectory_index = 0
-    
-    def walk_control_loop(self):
-        """Main walking control loop"""
-        if not self.walk_trajectory:
-            # Generate a simple walk forward
-            self.generate_walk_trajectory([0.0, 0.0])
-            return
-        
-        if self.trajectory_index >= len(self.walk_trajectory):
-            # Reached end of trajectory, stop walking
-            self.get_logger().info("Reached end of walking trajectory")
-            self.stop_walking()
-            return
-        
-        # Get desired position for the next few steps
-        desired_positions = []
-        for i in range(min(10, len(self.walk_trajectory) - self.trajectory_index)):
-            desired_positions.append(self.walk_trajectory[self.trajectory_index + i])
-        
-        # Plan next step using MPC
-        next_foot_pos, zmp_sequence = self.mpc_controller.plan_step(
-            self.com_state,
-            self.support_foot,
-            desired_positions
-        )
-        
-        # Execute next step
-        self.execute_step(next_foot_pos)
-        
-        # Update which foot is supporting
-        self.in_left_support = not self.in_left_support
-        self.support_foot = next_foot_pos
-        
-        # Update trajectory index
-        self.trajectory_index += 1
-    
-    def execute_step(self, target_foot_pos):
-        """Execute the planned step using joint control"""
-        # In practice, this would convert foot position to joint angles
-        # For now, just log the step
-        self.get_logger().info(f"Stepping to: [{target_foot_pos[0]:.3f}, {target_foot_pos[1]:.3f}, {target_foot_pos[2]:.3f}]")
-        
-        # Calculate joint angles for target foot position
-        # This would involve inverse kinematics in a real implementation
-        left_leg_cmd = Float64MultiArray()
-        right_leg_cmd = Float64MultiArray()
-        
-        # Placeholder joint angles (in practice, calculate from IK)
-        if self.in_left_support:
-            # Right leg moves to target position
-            right_leg_cmd.data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 6 DOF joints
-        else:
-            # Left leg moves to target position
-            left_leg_cmd.data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 6 DOF joints
-        
-        # Publish commands
-        if len(right_leg_cmd.data) > 0:
-            self.right_leg_pub.publish(right_leg_cmd)
-        if len(left_leg_cmd.data) > 0:
-            self.left_leg_pub.publish(left_leg_cmd)
-    
-    def stop_walking(self):
-        """Stop the walking motion"""
-        stop_cmd = Float64MultiArray()
-        stop_cmd.data = [0.0] * 6  # Zero all joint velocities
-        
-        self.left_leg_pub.publish(stop_cmd)
-        self.right_leg_pub.publish(stop_cmd)
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    walking_node = BipedalWalkingNode()
-    
-    try:
-        rclpy.spin(walking_node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        walking_node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-### Deep Reinforcement Learning for Bipedal Walking
-
-Deep reinforcement learning has shown great success in learning complex bipedal locomotion:
-
-```python
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import numpy as np
-
-
-class BipedalPolicyNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(BipedalPolicyNetwork, self).__init__()
-        
-        # Shared layers
-        self.shared_layers = nn.Sequential(
-            nn.Linear(state_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU()
-        )
-        
-        # Policy head (actor)
-        self.policy_mean = nn.Linear(128, action_dim)
-        self.policy_std = nn.Linear(128, action_dim)
-        
-        # Value head (critic)
-        self.value = nn.Linear(128, 1)
-    
-    def forward(self, state):
-        features = self.shared_layers(state)
-        
-        # Policy (mean and std for continuous action space)
-        action_mean = torch.tanh(self.policy_mean(features))  # Actions in [-1, 1]
-        action_std = torch.sigmoid(self.policy_std(features)) + 1e-5  # Avoid zero std
-        
-        # Value
-        value = self.value(features)
-        
-        return action_mean, action_std, value
-
-
-class PPOAgent:
-    def __init__(self, state_dim, action_dim, lr=3e-4, gamma=0.99, eps_clip=0.2):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        self.actor_critic = BipedalPolicyNetwork(state_dim, action_dim).to(self.device)
-        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=lr)
-        
-        self.gamma = gamma
-        self.eps_clip = eps_clip
-        self.C_entropy = 0.01  # Entropy coefficient
-    
-    def get_action(self, state):
-        """Get action from policy"""
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-        
-        action_mean, action_std, value = self.actor_critic(state)
-        
-        # Sample action from normal distribution
-        dist = torch.distributions.Normal(action_mean, action_std)
-        action = dist.sample()
-        action_log_prob = dist.log_prob(action).sum(dim=1)
-        
-        return action.cpu().numpy()[0], action_log_prob.cpu().numpy()[0], value.cpu().numpy()[0]
-    
-    def evaluate(self, state, action):
-        """Evaluate state-action pair"""
-        action_mean, action_std, value = self.actor_critic(state)
-        
-        dist = torch.distributions.Normal(action_mean, action_std)
-        action_logprobs = dist.log_prob(action).sum(dim=1, keepdim=True)
-        dist_entropy = dist.entropy().sum(dim=1).mean()
-        
-        return action_logprobs, torch.squeeze(value, 1), dist_entropy
-
-
-class DRLBipedalNode(Node):
-    def __init__(self):
-        super().__init__('drl_bipedal')
-        
-        # Initialize RL agent
-        # State: [com_pos, com_vel, joint_angles, joint_velocities, external_forces, ...]
-        # Action: [torques for each joint]
-        self.rl_agent = PPOAgent(
-            state_dim=40,  # Example state dimension
-            action_dim=12  # Example action dimension (6 joints per leg)
-        )
-        
-        # Robot simulation interface
-        self.robot_state = np.zeros(40)  # Placeholder for robot state
-        self.action_buffer = []
-        
-        # Training parameters
-        self.episode_reward = 0.0
-        self.episode_step = 0
-        self.max_episode_steps = 2000
-        self.is_training = True
-        
-        # Timer for RL control
-        self.rl_timer = self.create_timer(0.02, self.rl_control_loop)  # 50Hz control
-    
-    def get_robot_state(self):
-        """Get current robot state for RL algorithm"""
-        # In practice, this would interface with the physical or simulated robot
-        # For now, return a realistic state representation
-        
-        # Example state components:
-        # - Center of mass position and velocity
-        # - Joint angles and velocities
-        # - IMU readings
-        # - Touch sensor data
-        # - Previous actions
-        
-        state = np.zeros(40)
-        
-        # Fill with some dummy data (in practice, read from robot)
-        # CoM position (3) + velocity (3) = 6
-        # Joint angles for 12 joints (12) + velocities (12) = 24
-        # IMU data (6) + touch sensors (2) + previous actions (2) = 10
-        # Total: 6 + 24 + 10 = 40
-        
-        for i in range(len(state)):
-            state[i] = np.random.normal(0, 0.1)  # Small random values
-        
-        return state
-    
-    def send_action_to_robot(self, action):
-        """Send action to robot"""
-        # Convert action to joint torques or positions
-        # In practice, this would interface with actual robot controllers
-        self.get_logger().info(f"Action sent: [{action[:3]}...]")  # Log first 3 actions
-        
-        # For demonstration, just update the internal state
-        # In real robot, this would send commands to actuators
     
     def calculate_reward(self):
-        """Calculate reward for current state"""
-        # In practice, this would be based on actual robot performance
-        # For bipedal walking, common reward components are:
-        # - Forward progress
-        # - Upright posture
-        # - Energy efficiency
-        # - Balance stability
+        """Calculate reward based on robot state"""
+        # Reward components:
+        # 1. Forward progress
+        # 2. Maintaining balance (CoM height)
+        # 3. Energy efficiency (minimize joint efforts)
+        # 4. Safety (avoid joint limits)
         
-        # Example reward calculation (simplified):
-        forward_velocity = self.robot_state[3]  # Assuming 4th element is CoM x-velocity
+        # Forward progress reward: encourage movement in x direction
+        forward_reward = self.robot_state['position'][0] * 10  # 10 points per meter forward
         
-        # Reward for moving forward
-        forward_reward = max(0, forward_velocity) * 10
+        # Balance reward: maintain upright posture
+        com_height = self.robot_state['position'][2]
+        balance_reward = max(0, com_height - 0.75) * 50  # Encourage keeping CoM above 0.75m
         
-        # Penalty for falling (if z-position of CoM drops too low)
-        com_z = self.robot_state[2]  # Assuming 3rd element is CoM z-position
-        fall_penalty = 0 if com_z > 0.5 else -10  # Heavily penalize falling
+        # Energy penalty: discourage excessive joint movement
+        energy_penalty = -np.sum(np.abs(self.robot_state['joint_velocities'])) * 0.1
         
-        # Reward for staying upright
-        upright_reward = 0  # Simplified - in practice consider IMU angles
+        # Joint limit penalty: discourage approaching joint limits
+        joint_limit_penalty = -np.sum(
+            np.maximum(0, np.abs(self.robot_state['joint_positions']) - (np.pi * 0.9))
+        ) * 10  # Heavy penalty when approaching 90% of joint limits
         
-        # Combine rewards
-        total_reward = forward_reward + fall_penalty + upright_reward
-        
+        total_reward = forward_reward + balance_reward + energy_penalty + joint_limit_penalty
         return total_reward
     
-    def rl_control_loop(self):
-        """Main RL control loop"""
-        # Get current state
-        self.robot_state = self.get_robot_state()
+    def check_termination(self):
+        """Check if episode should terminate"""
+        # Terminate if robot falls (CoM too low)
+        com_height = self.robot_state['position'][2]
+        if com_height < self.com_height_threshold:
+            return True
         
-        # Get action from policy
-        action, action_log_prob, state_value = self.rl_agent.get_action(self.robot_state)
+        # Terminate if robot moves too far in wrong direction
+        if self.robot_state['position'][0] < -1.0:  # Moved backwards too much
+            return True
         
-        # Execute action
-        self.send_action_to_robot(action)
-        
-        # Calculate reward
-        reward = self.calculate_reward()
-        self.episode_reward += reward
-        
-        # Check if episode ended
-        self.episode_step += 1
-        done = (self.episode_step >= self.max_episode_steps or 
-                self.robot_state[2] < 0.3)  # Fall detection
-        
-        if done:
-            self.get_logger().info(f"Episode ended. Total reward: {self.episode_reward:.2f}")
-            self.episode_step = 0
-            self.episode_reward = 0.0
+        return False
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    bipedal_node = DRLBipedalNode()
+def train_bipedal_rl_agent():
+    """Train the bipedal walking RL agent"""
     
-    try:
-        rclpy.spin(bipedal_node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        bipedal_node.destroy_node()
-        rclpy.shutdown()
+    # Create environment
+    env = HumanoidEnv()
+    
+    # Create agent
+    agent = RLWalkingAgent(
+        state_dim=env.observation_space.shape[0],
+        action_dim=env.action_space.shape[0]
+    )
+    
+    # Train the agent
+    agent.train_on_env_data(env, episodes=5000)
+    
+    return agent
+
+
+def main():
+    # Train or load a pre-trained agent
+    print("Starting RL training for bipedal locomotion...")
+    agent = train_bipedal_rl_agent()
+    
+    print("Training complete! Agent ready for deployment.")
+    
+    return agent
 
 
 if __name__ == '__main__':
-    main()
+    trained_agent = main()
 ```
 
-## Integration of Perception and Action
+## Perception-Action Integration
 
-### Perception-Action Loop
+### Integrating Perception with Action Planning
 
-For intelligent manipulation, perception and action must be tightly integrated:
+Now, let's connect perception and action through the cognitive planning layer:
 
 ```python
 # perception_action_integration.py
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, PointCloud2, LaserScan
-from geometry_msgs.msg import PoseStamped, Point
+from sensor_msgs.msg import Image, LaserScan, Imu, JointState
+from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import String
-from vision_msgs.msg import Detection2DArray
-from tf2_ros import TransformListener, Buffer
-from collections import deque
+from cv_bridge import CvBridge
 import numpy as np
-import cv2
+from typing import List, Dict, Any, Optional
+import json
 
 
-class PerceptionActionNode(Node):
+class PerceptionActionIntegrator(Node):
+    """Integrates perception and action planning for humanoid robot autonomy"""
+    
     def __init__(self):
-        super().__init__('perception_action')
+        super().__init__('perception_action_integrator')
         
-        # Initialize TF
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.bridge = CvBridge()
         
-        # Perception data
-        self.detections = deque(maxlen=10)
-        self.point_cloud = None
-        self.laser_data = None
-        self.camera_pose = None
+        # Perception data storage
+        self.current_image = None
+        self.current_lidar = None
+        self.current_imu = None
+        self.current_joints = {}
+        self.current_pose = None
         
-        # Action planning
-        self.current_task = "idle"
-        self.task_queue = deque()
-        self.reach_targets = deque(maxlen=5)
+        # Action planning state
+        self.active_goals = []
+        self.current_plan = None
         
         # Subscribers
-        self.detection_sub = self.create_subscription(
-            Detection2DArray, '/object_detections', 
-            self.detection_callback, 10
+        self.image_sub = self.create_subscription(
+            Image, '/camera/rgb/image_raw', self.image_callback, 10
         )
         
-        self.pc_sub = self.create_subscription(
-            PointCloud2, '/camera/depth/points',
-            self.pointcloud_callback, 10
+        self.lidar_sub = self.create_subscription(
+            LaserScan, '/scan', self.lidar_callback, 10
         )
         
-        self.laser_sub = self.create_subscription(
-            LaserScan, '/laser_scan',
-            self.laser_callback, 10
+        self.imu_sub = self.create_subscription(
+            Imu, '/imu/data', self.imu_callback, 10
+        )
+        
+        self.joint_state_sub = self.create_subscription(
+            JointState, '/joint_states', self.joint_state_callback, 10
+        )
+        
+        self.pose_sub = self.create_subscription(
+            PoseStamped, '/amcl_pose', self.pose_callback, 10
+        )
+        
+        self.high_level_command_sub = self.create_subscription(
+            String, '/high_level_command', self.command_callback, 10
         )
         
         # Publishers
-        self.task_pub = self.create_publisher(String, '/robot_tasks', 10)
-        self.reach_pub = self.create_publisher(PoseStamped, '/reach_target', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.action_status_pub = self.create_publisher(String, '/action_status', 10)
+        self.perception_report_pub = self.create_publisher(String, '/perception_report', 10)
         
-        # Timer for integrated loop
-        self.integrated_timer = self.create_timer(0.1, self.integrated_loop)
+        # Timer for integration loop
+        self.integration_timer = self.create_timer(0.1, self.integration_loop)  # 10 Hz
+        
+        self.get_logger().info("Perception-Action Integrator initialized")
     
-    def detection_callback(self, msg):
-        """Process object detections"""
-        # Store recent detections
-        for detection in msg.detections:
-            # Convert 2D detection to 3D using depth information
-            if self.camera_pose and self.point_cloud:
-                # This is a simplified example - in practice, 
-                # you'd use depth from the camera
-                target_3d = self.project_2d_detection_to_3d(
-                    detection.bbox.center.x,
-                    detection.bbox.center.y,
-                    detection.bbox.size_x,
-                    detection.bbox.size_y
-                )
+    def image_callback(self, msg):
+        """Process image data"""
+        try:
+            self.current_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        except Exception as e:
+            self.get_logger().error(f"Error converting image: {e}")
+    
+    def lidar_callback(self, msg):
+        """Process LiDAR data"""
+        self.current_lidar = msg
+    
+    def imu_callback(self, msg):
+        """Process IMU data"""
+        self.current_imu = msg
+    
+    def joint_state_callback(self, msg):
+        """Process joint state data"""
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joints[name] = {
+                    'position': msg.position[i],
+                    'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
+                    'effort': msg.effort[i] if i < len(msg.effort) else 0.0
+                }
+    
+    def pose_callback(self, msg):
+        """Process robot pose data"""
+        self.current_pose = msg.pose
+    
+    def command_callback(self, msg):
+        """Process high-level commands"""
+        try:
+            command_data = json.loads(msg.data)
+            self.process_high_level_command(command_data)
+        except json.JSONDecodeError:
+            self.get_logger().warn(f"Invalid JSON in command: {msg.data}")
+    
+    def process_high_level_command(self, command_data: Dict[str, Any]):
+        """Process high-level command using perception data"""
+        command_type = command_data.get('type')
+        command_params = command_data.get('parameters', {})
+        
+        if command_type == 'navigate_to_object':
+            self.handle_navigate_to_object_command(command_params)
+        elif command_type == 'grasp_object':
+            self.handle_grasp_object_command(command_params)
+        elif command_type == 'inspect_area':
+            self.handle_inspect_area_command(command_params)
+        else:
+            self.get_logger().warn(f"Unknown command type: {command_type}")
+    
+    def handle_navigate_to_object_command(self, params: Dict[str, Any]):
+        """Handle navigate to object command"""
+        object_type = params.get('object_type', 'unknown')
+        
+        self.get_logger().info(f"Requested to navigate to {object_type}")
+        
+        # Use perception to locate object
+        object_pose = self.locate_object_in_environment(object_type)
+        
+        if object_pose:
+            # Plan navigation to object
+            nav_plan = self.plan_navigation_to_pose(object_pose)
+            
+            if nav_plan:
+                # Execute plan
+                self.execute_navigation_plan(nav_plan)
                 
-                if target_3d is not None:
-                    self.reach_targets.append(target_3d)
+                status_msg = String()
+                status_msg.data = json.dumps({
+                    'status': 'executing',
+                    'action': 'navigation',
+                    'target': object_type,
+                    'target_pose': object_pose
+                })
+                
+                self.action_status_pub.publish(status_msg)
+            else:
+                self.get_logger().warn(f"Could not plan navigation to {object_type}")
+        else:
+            self.get_logger().warn(f"Could not locate {object_type} in environment")
+            
+            # Could initiate environment search
+            self.initiate_object_search(object_type)
     
-    def project_2d_detection_to_3d(self, x_2d, y_2d, w_2d, h_2d):
-        """Project 2D detection to 3D world coordinate"""
-        # In practice, you'd use the depth image or point cloud
-        # to get the actual 3D position
+    def locate_object_in_environment(self, object_type: str) -> Optional[Dict[str, Any]]:
+        """Locate an object in the environment using perception"""
+        # This would use computer vision to detect objects
+        # For now, return a placeholder
         
-        # Simplified projection using camera intrinsics
-        # This is a placeholder implementation
-        if self.camera_pose:
-            # Calculate 3D position based on detection and depth
-            # For now, return a placeholder
-            return np.array([x_2d * 0.001, y_2d * 0.001, 1.0])  # Placeholder depth
+        # In real implementation, this would:
+        # 1. Process current imagery to detect objects
+        # 2. Use depth information to get 3D positions
+        # 3. Match detected objects to requested type
+        
+        # For this example, return a fixed position if we're simulating
+        if self.current_pose and object_type == 'cup':
+            # If object exists in world model (from perception), return its pose
+            # This is a simplified example
+            return {
+                'x': self.current_pose.position.x + 1.0,  # 1m ahead of current pose
+                'y': self.current_pose.position.y + 0.5,  # 0.5m to the right
+                'z': 0.8  # Height of table
+            }
         
         return None
     
-    def pointcloud_callback(self, msg):
-        """Process point cloud data"""
-        # Convert PointCloud2 to array for processing
-        # This is a simplified approach
-        self.point_cloud = msg
-    
-    def laser_callback(self, msg):
-        """Process laser data"""
-        self.laser_data = msg
-    
-    def integrated_loop(self):
-        """Main integrated perception-action loop"""
-        if self.reach_targets:
-            # Process the oldest target
-            target = self.reach_targets.popleft()
-            
-            # Check if target is valid and reachable
-            if self.is_reachable(target):
-                # Publish reach target to robot controller
-                pose_msg = PoseStamped()
-                pose_msg.header.frame_id = 'map'  # Or appropriate frame
-                pose_msg.header.stamp = self.get_clock().now().to_msg()
-                pose_msg.pose.position.x = float(target[0])
-                pose_msg.pose.position.y = float(target[1])
-                pose_msg.pose.position.z = float(target[2])
-                pose_msg.pose.orientation.w = 1.0  # No rotation
-                
-                self.reach_pub.publish(pose_msg)
-                
-                self.get_logger().info(f"Reaching target: [{target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f}]")
-    
-    def is_reachable(self, target):
-        """Check if target is within robot's reach"""
-        # In practice, check robot kinematics and joint limits
-        # For now, use a simple distance check
-        robot_pos = np.array([0, 0, 1])  # Placeholder robot position
-        distance = np.linalg.norm(target - robot_pos)
+    def plan_navigation_to_pose(self, target_pose: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        """Plan a path to the target pose"""
+        # In practice, this would use a path planning algorithm (A*, RRT, etc.)
+        # For this example, return a simple straight-line path
         
-        # Assume robot can reach up to 1 meter away
-        return distance < 1.0
+        if not self.current_pose:
+            return None
+        
+        # Simple path planning - in practice would be much more complex
+        current_pos = self.current_pose.position
+        target_pos = [target_pose['x'], target_pose['y'], target_pose['z']]
+        
+        dx = target_pos[0] - current_pos.x
+        dy = target_pos[1] - current_pos.y
+        distance = np.sqrt(dx*dx + dy*dy)
+        
+        # Create path points every 0.5 meters
+        path = []
+        steps = int(distance / 0.5)
+        for i in range(steps + 1):
+            t = i / steps if steps > 0 else 0
+            point = {
+                'x': current_pos.x + t * dx,
+                'y': current_pos.y + t * dy,
+                'z': current_pos.z  # Maintain same height
+            }
+            path.append(point)
+        
+        # Add final point to target
+        if steps > 0 or distance > 0.1:  # If distance is significant
+            path.append(target_pos)
+        
+        return path
     
-    def evaluate_task_completion(self):
-        """Evaluate if current task is completed"""
-        # Check if manipulation action was successful
-        # This would involve checking robot state, gripper feedback, etc.
-        return False
+    def execute_navigation_plan(self, plan: List[Dict[str, Any]]):
+        """Execute navigation plan"""
+        self.get_logger().info(f"Executing navigation plan with {len(plan)} waypoints")
+        
+        for i, waypoint in enumerate(plan):
+            self.get_logger().info(f"Moving to waypoint {i+1}/{len(plan)}: ({waypoint['x']:.2f}, {waypoint['y']:.2f})")
+            
+            # Move to waypoint
+            success = self.move_to_waypoint(waypoint)
+            
+            if not success:
+                self.get_logger().error(f"Failed to reach waypoint {i+1}")
+                break
+    
+    def move_to_waypoint(self, waypoint: Dict[str, Any]) -> bool:
+        """Move robot to specified waypoint"""
+        # Calculate direction to target
+        if not self.current_pose:
+            return False
+        
+        current_pos = self.current_pose.position
+        dx = waypoint['x'] - current_pos.x
+        dy = waypoint['y'] - current_pos.y
+        
+        # Calculate distance to target
+        target_distance = np.sqrt(dx*dx + dy*dy)
+        
+        # Create velocity command to move toward target
+        cmd = Twist()
+        cmd.linear.x = min(0.3, target_distance)  # Scale speed with distance, max 0.3 m/s
+        cmd.angular.z = np.arctan2(dy, dx) - self.get_current_yaw()  # Rotate toward target
+        
+        # Normalize angular velocity
+        if cmd.angular.z > np.pi:
+            cmd.angular.z -= 2*np.pi
+        elif cmd.angular.z < -np.pi:
+            cmd.angular.z += 2*np.pi
+        
+        # Limit angular velocity
+        cmd.angular.z = max(-0.5, min(0.5, cmd.angular.z))
+        
+        # Publish command
+        self.cmd_vel_pub.publish(cmd)
+        
+        # Wait for some time or until close to target (simplified)
+        # In real implementation, would use proper trajectory tracking
+        import time
+        time.sleep(0.2)  # Simulate time to reach position
+        
+        return target_distance < 0.2  # Return success if within 20cm
+    
+    def get_current_yaw(self) -> float:
+        """Get current yaw angle from robot orientation"""
+        if not self.current_pose or not self.current_pose.orientation:
+            return 0.0
+        
+        # Convert quaternion to yaw angle
+        q = self.current_pose.orientation
+        siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+        yaw = np.arctan2(siny_cosp, cosy_cosp)
+        
+        return yaw
+    
+    def handle_grasp_object_command(self, params: Dict[str, Any]):
+        """Handle object grasping command"""
+        object_id = params.get('object_id')
+        
+        self.get_logger().info(f"Requested to grasp object: {object_id}")
+        
+        # Locate object using perception
+        object_pose = self.locate_object_in_environment(object_id)
+        
+        if not object_pose:
+            self.get_logger().warn(f"Could not locate object {object_id}")
+            return
+        
+        # Navigate close to object (grasping distance ~0.5m)
+        grasp_approach_pose = {
+            'x': object_pose['x'] - 0.5,  # 0.5m away from object in x direction
+            'y': object_pose['y'],
+            'z': object_pose['z']
+        }
+        
+        # Plan and execute approach
+        approach_plan = self.plan_navigation_to_pose(grasp_approach_pose)
+        if approach_plan:
+            self.execute_navigation_plan(approach_plan)
+        
+        # Perform grasping action - would require more complex control in practice
+        self.execute_grasp_action(object_pose)
+    
+    def execute_grasp_action(self, object_pose: Dict[str, Any]):
+        """Execute grasping action"""
+        # In a real system, this would:
+        # 1. Plan grasp trajectory using arm IK
+        # 2. Move arm to grasp position
+        # 3. Close gripper
+        # 4. Verify grasp success
+        
+        self.get_logger().info(f"Attempting to grasp object at {object_pose}")
+        
+        # Publish a status indicating grasp in progress
+        status_msg = String()
+        status_msg.data = json.dumps({
+            'status': 'executing',
+            'action': 'grasping',
+            'target_pose': object_pose
+        })
+        self.action_status_pub.publish(status_msg)
+    
+    def initiate_object_search(self, object_type: str):
+        """Initiate environment search for an object"""
+        self.get_logger().info(f"Initiating search for {object_type}")
+        
+        # Plan search behavior (turn in place, move to different viewpoints)
+        search_pattern = [
+            {'action': 'rotate', 'angle': 90, 'duration': 2.0},
+            {'action': 'move', 'direction': 'forward', 'distance': 1.0, 'duration': 3.0},
+            {'action': 'rotate', 'angle': -90, 'duration': 2.0},
+            {'action': 'move', 'direction': 'forward', 'distance': 1.0, 'duration': 3.0},
+            {'action': 'rotate', 'angle': 180, 'duration': 2.0}
+        ]
+        
+        for step in search_pattern:
+            self.execute_search_step(step)
+            
+            # Check if object is found after each step
+            object_pose = self.locate_object_in_environment(object_type)
+            if object_pose:
+                self.get_logger().info(f"Found {object_type} at position {object_pose}")
+                
+                # Report finding to higher level
+                report_msg = String()
+                report_msg.data = json.dumps({
+                    'event': 'object_found',
+                    'object_type': object_type,
+                    'position': object_pose
+                })
+                self.perception_report_pub.publish(report_msg)
+                return  # Object found, stop searching
+        
+        # Object not found after search
+        self.get_logger().warn(f"Could not find {object_type} after searching")
+        report_msg = String()
+        report_msg.data = json.dumps({
+            'event': 'object_not_found',
+            'object_type': object_type,
+            'search_completed': True
+        })
+        self.perception_report_pub.publish(report_msg)
+    
+    def execute_search_step(self, step: Dict[str, Any]):
+        """Execute a single search pattern step"""
+        if step['action'] == 'rotate':
+            cmd = Twist()
+            cmd.linear.x = 0.0
+            cmd.angular.z = np.deg2rad(step['angle']) / step['duration']  # Convert to angular velocity
+            
+            # Publish rotation command for specified duration
+            start_time = time.time()
+            while time.time() - start_time < step['duration']:
+                self.cmd_vel_pub.publish(cmd)
+                time.sleep(0.05)  # 20Hz control
+            
+            # Stop rotation
+            stop_cmd = Twist()
+            self.cmd_vel_pub.publish(stop_cmd)
+        
+        elif step['action'] == 'move':
+            cmd = Twist()
+            if step['direction'] == 'forward':
+                cmd.linear.x = step['distance'] / step['duration']  # Convert to linear velocity
+            elif step['direction'] == 'backward':
+                cmd.linear.x = -step['distance'] / step['duration']
+            
+            # Publish movement command for specified duration
+            start_time = time.time()
+            while time.time() - start_time < step['duration']:
+                self.cmd_vel_pub.publish(cmd)
+                time.sleep(0.05)  # 20Hz control
+            
+            # Stop movement
+            stop_cmd = Twist()
+            self.cmd_vel_pub.publish(stop_cmd)
+    
+    def integration_loop(self):
+        """Main integration loop - coordinate perception and action"""
+        # Process sensor data for current state
+        if self.current_imu:
+            self.check_balance_state()
+        
+        if self.current_lidar:
+            self.update_obstacle_map()
+        
+        # Monitor active goals
+        self.monitor_active_goals()
+    
+    def check_balance_state(self):
+        """Monitor robot balance using IMU data"""
+        if not self.current_imu:
+            return
+        
+        # Check orientation from IMU for balance
+        q = self.current_imu.orientation
+        rot = R.from_quat([q.x, q.y, q.z, q.w])
+        roll, pitch, _ = rot.as_euler('xyz')
+        
+        # If orientation deviates too much from upright, trigger balance response
+        max_tilt = np.radians(15)  # 15 degrees max tilt
+        if abs(roll) > max_tilt or abs(pitch) > max_tilt:
+            self.get_logger().warn(f"Dangerous tilt detected: roll={np.degrees(roll):.1f}°, pitch={np.degrees(pitch):.1f}°")
+            # In real system, trigger balance recovery
+            self.trigger_balance_recovery()
+    
+    def trigger_balance_recovery(self):
+        """Trigger balance recovery behavior"""
+        status_msg = String()
+        status_msg.data = json.dumps({
+            'status': 'critical',
+            'action': 'balance_recovery',
+            'reason': 'dangerous_tilt_detected'
+        })
+        self.action_status_pub.publish(status_msg)
+    
+    def update_obstacle_map(self):
+        """Update obstacle map based on LiDAR data"""
+        # Process LiDAR data to identify obstacles
+        # In practice, this would build a more sophisticated map
+        pass
+    
+    def monitor_active_goals(self):
+        """Monitor progress of active goals"""
+        # In practice, monitor if active goals are progressing
+        # Handle timeouts and failures
+        pass
 
 
 def main(args=None):
     rclpy.init(args=args)
-    perception_action_node = PerceptionActionNode()
+    node = PerceptionActionIntegrator()
     
     try:
-        rclpy.spin(perception_action_node)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        node.get_logger().info("Perception-Action Integrator shutting down...")
     finally:
-        perception_action_node.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 
@@ -1042,326 +1579,327 @@ if __name__ == '__main__':
     main()
 ```
 
-## Performance Evaluation and Validation
+## Complete System Launch and Validation
 
-### Metrics for AI-Powered Systems
-
-For evaluating AI-powered manipulation and locomotion:
-
-#### Manipulation Metrics:
-- **Success Rate**: Percentage of successful grasps/placements
-- **Grasp Quality**: Force closure, grasp stability
-- **Task Completion Time**: How quickly tasks are completed
-- **Energy Efficiency**: Power consumption for tasks
-
-#### Locomotion Metrics:
-- **Walking Speed**: Average forward velocity
-- **Stability**: Zero moment point (ZMP) variance, fall rate
-- **Energy Efficiency**: Cost of transport
-- **Adaptability**: Ability to handle terrain variations
-
-### Validation Framework
+### Main Launch File
 
 ```python
-# validation_framework.py
-import numpy as np
+# launch/humanoid_complete_system.py
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, TimerAction
+from launch.event_handlers import OnProcessExit
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
 
 
-class ManipulationValidation:
-    def __init__(self):
-        self.grasp_successes = []
-        self.grasp_attempts = []
-        self.task_completion_times = []
-        self.trajectory_errors = []
+def generate_launch_description():
+    # Declare launch arguments
+    declare_use_sim_time = DeclareLaunchArgument(
+        name='use_sim_time',
+        default_value='True',
+        description='Use simulation time if true'
+    )
     
-    def validate_grasping(self, grasp_positions, successful_grasps):
-        """Validate grasping performance"""
-        success_rate = np.sum(successful_grasps) / len(successful_grasps) if successful_grasps else 0
+    declare_robot_model = DeclareLaunchArgument(
+        name='robot_model',
+        default_value='humanoid_robot',
+        description='Robot model name'
+    )
+    
+    declare_world_file = DeclareLaunchArgument(
+        name='world_file',
+        default_value='default.sdf',
+        description='World file for Gazebo simulation'
+    )
+    
+    # Get launch configurations
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    robot_model = LaunchConfiguration('robot_model')
+    world_file = LaunchConfiguration('world_file')
+    
+    # Perception node
+    perception_node = Node(
+        package='my_humanoid_perception',
+        executable='perception_node',
+        name='perception_node',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+    
+    # Cognitive planning node
+    cognitive_planning_node = Node(
+        package='my_humanoid_planning',
+        executable='cognitive_planning_node',
+        name='cognitive_planning',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+    
+    # Motion control node
+    motion_control_node = Node(
+        package='my_humanoid_control',
+        executable='motion_controller',
+        name='motion_controller',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'step_height': 0.05,
+            'step_length': 0.3,
+            'control_frequency': 50
+        }],
+        output='screen'
+    )
+    
+    # AI grasping node
+    ai_grasping_node = Node(
+        package='my_humanoid_manipulation',
+        executable='ai_grasping_node',
+        name='ai_grasping',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+    
+    # Perception-action integrator node
+    perception_action_node = Node(
+        package='my_humanoid_perception_action',
+        executable='perception_action_integrator',
+        name='perception_action_integrator',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+    
+    # Voice interface node (if needed)
+    voice_interface_node = Node(
+        package='my_voice_interface',
+        executable='voice_interface_node',
+        name='voice_interface',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+    
+    # Define launch order with delays to ensure proper initialization
+    delayed_nodes = []
+    
+    # First, start motion control (needed for other nodes)
+    delayed_nodes.append(TimerAction(
+        period=2.0,  # Start after 2 seconds
+        actions=[motion_control_node]
+    ))
+    
+    # Then perception and planning
+    delayed_nodes.append(TimerAction(
+        period=3.0,
+        actions=[perception_node, cognitive_planning_node]
+    ))
+    
+    # Then AI components
+    delayed_nodes.append(TimerAction(
+        period=4.0,
+        actions=[ai_grasping_node, perception_action_node]
+    ))
+    
+    # Finally, UI components
+    delayed_nodes.append(TimerAction(
+        period=5.0,
+        actions=[voice_interface_node]
+    ))
+    
+    return LaunchDescription([
+        declare_use_sim_time,
+        declare_robot_model,
+        declare_world_file,
         
-        # Calculate grasp quality metrics
-        if grasp_positions:
-            grasp_variance = np.var(grasp_positions, axis=0)  # Variance of grasp positions
-        else:
-            grasp_variance = np.zeros(3)
-        
-        return {
-            'success_rate': success_rate,
-            'grasp_variance': grasp_variance,
-            'average_position_error': np.mean(self.trajectory_errors) if self.trajectory_errors else 0
-        }
-    
-    def validate_task_completion(self, task_times):
-        """Validate task completion performance"""
-        return {
-            'avg_completion_time': np.mean(task_times) if task_times else float('inf'),
-            'completion_success_rate': len([t for t in task_times if t < 60]) / len(task_times) if task_times else 0,  # Tasks completed under 60s
-            'std_completion_time': np.std(task_times) if task_times else 0
-        }
-
-
-class LocomotionValidation:
-    def __init__(self):
-        self.step_lengths = []
-        self.step_times = []
-        self.com_stability = []
-        self.fall_rates = []
-    
-    def validate_walking(self, step_data, stability_data, fall_count, total_steps):
-        """Validate walking performance"""
-        avg_step_length = np.mean(step_data) if step_data else 0
-        avg_step_time = np.mean(self.step_times) if self.step_times else 1.0
-        avg_com_deviation = np.mean(stability_data) if stability_data else 0
-        fall_rate = fall_count / total_steps if total_steps > 0 else 0
-        
-        return {
-            'avg_step_length': avg_step_length,
-            'walking_speed': avg_step_length / avg_step_time,
-            'balance_stability': avg_com_deviation,
-            'fall_rate': fall_rate
-        }
-    
-    def calculate_energy_efficiency(self, force_data, velocity_data):
-        """Calculate energy efficiency"""
-        # Simplified energy calculation
-        # In practice, consider motor currents, joint torques, etc.
-        if len(force_data) > 0 and len(velocity_data) > 0:
-            # Energy = Force * Velocity (simplified)
-            energy = np.sum(np.abs(np.multiply(force_data, velocity_data)))
-            return energy
-        return 0
-
-
-# Example usage
-manip_validator = ManipulationValidation()
-loco_validator = LocomotionValidation()
-
-# Simulate some validation data
-grasp_positions = np.random.rand(10, 3) * 0.1  # Small variance in grasp positions
-successful_grasps = [True, True, False, True, True, False, True, True, True, True]
-manip_metrics = manip_validator.validate_grasping(grasp_positions, successful_grasps)
-
-print(f"Manipulation Success Rate: {manip_metrics['success_rate']:.2f}")
-print(f"Grasp Variance: {manip_metrics['grasp_variance']}")
+        # Start some nodes immediately
+        # Others with delays to ensure proper initialization
+    ] + delayed_nodes)
 ```
 
-## Optimization and Real-Time Considerations
-
-### Performance Optimization Techniques
-
-For real-time AI-powered robot control:
-
-1. **Model Optimization**: Quantization, pruning, distillation
-2. **Hardware Acceleration**: GPU, TPU, dedicated inference chips
-3. **Efficient Algorithms**: Lightweight models, algorithmic improvements
-4. **Control Frequency Management**: Task-based prioritization
-
-### Real-Time Control Architecture
+### Validation and Testing Scripts
 
 ```python
-# real_time_control.py
-import threading
+# validation_and_testing.py
+import unittest
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+from geometry_msgs.msg import Pose, Twist
 import time
-import numpy as np
+import threading
 
 
-class RealTimeBipedalController:
-    def __init__(self, control_frequency=500):  # 500 Hz for balance
-        self.control_frequency = control_frequency
-        self.control_period = 1.0 / control_frequency
+class HumanoidSystemValidator(unittest.TestCase):
+    """Validation tests for the complete humanoid system"""
+    
+    def setUp(self):
+        """Setup test environment"""
+        rclpy.init()
+        self.validator_node = ValidatorNode()
+        self.executor = rclpy.executors.SingleThreadedExecutor()
+        self.executor.add_node(self.validator_node)
         
-        # Control threads
-        self.balance_thread = threading.Thread(target=self.balance_control_loop)
-        self.walk_thread = threading.Thread(target=self.walk_planning_loop)
-        self.perception_thread = threading.Thread(target=self.perception_loop)
+        # Start executor in a thread
+        self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
+        self.executor_thread.start()
         
-        # Robot state
-        self.robot_state = {
-            'com': np.zeros(3),
-            'com_dot': np.zeros(3),
-            'joint_positions': np.zeros(12),
-            'joint_velocities': np.zeros(12),
-            'imu_data': np.zeros(6)
+    def tearDown(self):
+        """Clean up test environment"""
+        self.executor.shutdown()
+        self.validator_node.destroy_node()
+        rclpy.shutdown()
+    
+    def test_perception_accuracy(self):
+        """Test perception system accuracy"""
+        # This would test that perception correctly identifies objects
+        # For now, this is a placeholder
+        
+        # Publish test sensor data
+        # Verify perception output matches expected
+        self.assertTrue(True, "Placeholder for perception accuracy test")
+    
+    def test_navigation_accuracy(self):
+        """Test navigation system accuracy"""
+        # Test that robot navigates to specified locations
+        # For now, placeholder
+        self.assertTrue(True, "Placeholder for navigation accuracy test")
+    
+    def test_grasping_success_rate(self):
+        """Test grasping success rate"""
+        # Test that robot successfully grasps objects
+        # For now, placeholder
+        self.assertTrue(True, "Placeholder for grasping success test")
+    
+    def test_balance_stability(self):
+        """Test balance stability during locomotion"""
+        # Test that robot maintains balance during walking
+        # For now, placeholder
+        self.assertTrue(True, "Placeholder for balance stability test")
+    
+    def test_system_integration(self):
+        """Test overall system integration"""
+        # Test that all components work together
+        # For now, placeholder
+        self.assertTrue(True, "Placeholder for system integration test")
+
+
+class ValidatorNode(Node):
+    """Node for validating the humanoid system"""
+    
+    def __init__(self):
+        super().__init__('system_validator')
+        
+        # Publishers and subscribers for validation
+        self.status_sub = self.create_subscription(
+            String, '/system_status', self.status_callback, 10
+        )
+        
+        self.action_status_sub = self.create_subscription(
+            String, '/action_status', self.action_status_callback, 10
+        )
+        
+        # Internal validation tracking
+        self.recent_status = ""
+        self.action_success_count = 0
+        self.action_failure_count = 0
+        self.system_errors = []
+        
+        self.get_logger().info("System validator initialized")
+    
+    def status_callback(self, msg):
+        """Track system status"""
+        try:
+            status_data = json.loads(msg.data)
+            self.recent_status = status_data.get('status', 'unknown')
+        except json.JSONDecodeError:
+            self.get_logger().warn(f"Invalid status message: {msg.data}")
+    
+    def action_status_callback(self, msg):
+        """Track action status"""
+        try:
+            action_data = json.loads(msg.data)
+            status = action_data.get('status', '')
+            
+            if status == 'completed':
+                self.action_success_count += 1
+            elif status in ['failed', 'error']:
+                self.action_failure_count += 1
+            elif status == 'critical':
+                self.system_errors.append(action_data.get('reason', 'unknown'))
+        except json.JSONDecodeError:
+            self.get_logger().warn(f"Invalid action status message: {msg.data}")
+    
+    def get_validation_metrics(self) -> Dict[str, Any]:
+        """Get current validation metrics"""
+        total_actions = self.action_success_count + self.action_failure_count
+        success_rate = (self.action_success_count / total_actions) if total_actions > 0 else 0
+        
+        metrics = {
+            'status': self.recent_status,
+            'action_success_rate': success_rate,
+            'total_actions': total_actions,
+            'success_count': self.action_success_count,
+            'failure_count': self.action_failure_count,
+            'system_errors': len(self.system_errors),
+            'recent_errors': self.system_errors[-5:] if self.system_errors else []
         }
         
-        # Control parameters
-        self.balance_gains = {'p': 100, 'd': 10}  # PD controller gains
-        self.max_torque = 100  # Nm
-        
-        # Threading control
-        self.running = True
+        return metrics
+
+
+def run_validation_suite():
+    """Run the complete validation suite"""
+    print("Running humanoid robot system validation suite...")
     
-    def balance_control_loop(self):
-        """High-frequency balance control loop"""
-        last_time = time.time()
-        
-        while self.running:
-            current_time = time.time()
-            dt = current_time - last_time
-            
-            if dt >= self.control_period:
-                # Perform balance control calculations
-                torques = self.compute_balance_torques()
-                
-                # Apply torques to robot (in practice, send to actuators)
-                self.apply_torques(torques)
-                
-                last_time = current_time
-            else:
-                # Sleep for remaining time to maintain frequency
-                time.sleep(max(0, self.control_period - dt))
+    # Run unit tests
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(HumanoidSystemValidator)
     
-    def compute_balance_torques(self):
-        """Compute balance torques using PD control"""
-        # Simple PD control for balance (ZMP-based in practice)
-        desired_com = np.array([0.0, 0.0, self.robot_state['com'][2]])  # Keep Z constant
-        pos_error = desired_com - self.robot_state['com']
-        vel_error = -self.robot_state['com_dot']
-        
-        # Generate torques based on error
-        torques = (self.balance_gains['p'] * pos_error + 
-                  self.balance_gains['d'] * vel_error)
-        
-        # Limit torques
-        torques = np.clip(torques, -self.max_torque, self.max_torque)
-        
-        return torques
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
     
-    def apply_torques(self, torques):
-        """Apply computed torques to robot joints"""
-        # In practice, this would send commands to joint controllers
-        pass
+    # Additionally run system-specific validation
+    validation_metrics = run_system_validation()
     
-    def walk_planning_loop(self):
-        """Lower frequency walking pattern planning"""
-        planning_frequency = 10  # 10 Hz planning
-        planning_period = 1.0 / planning_frequency
-        
-        last_time = time.time()
-        
-        while self.running:
-            current_time = time.time()
-            dt = current_time - last_time
-            
-            if dt >= planning_period:
-                # Plan walking pattern
-                self.plan_next_step()
-                
-                last_time = current_time
-            else:
-                time.sleep(max(0, planning_period - dt))
+    print("\nValidation Results Summary:")
+    print(f"  Tests run: {result.testsRun}")
+    print(f"  Failures: {len(result.failures)}")
+    print(f"  Errors: {len(result.errors)}")
+    print(f"  Success rate: {validation_metrics['action_success_rate']:.2f}")
     
-    def plan_next_step(self):
-        """Plan the next walking step"""
-        # In practice, this would use MPC, pattern generators, etc.
-        pass
+    return result
+
+
+def run_system_validation():
+    """Run system-level validation"""
+    rclpy.init()
     
-    def perception_loop(self):
-        """Perception processing at appropriate frequency"""
-        perception_frequency = 30  # 30 Hz for perception
-        perception_period = 1.0 / perception_frequency
-        
-        last_time = time.time()
-        
-        while self.running:
-            current_time = time.time()
-            dt = current_time - last_time
-            
-            if dt >= perception_period:
-                # Process sensor data
-                self.process_sensors()
-                
-                last_time = current_time
-            else:
-                time.sleep(max(0, perception_period - dt))
+    validator_node = ValidatorNode()
+    executor = rclpy.executors.SingleThreadedExecutor()
+    executor.add_node(validator_node)
     
-    def process_sensors(self):
-        """Process sensor data for perception"""
-        # In practice, this would process camera, LIDAR, etc.
-        pass
+    # Run for 30 seconds to collect metrics
+    start_time = time.time()
+    while time.time() - start_time < 30:
+        executor.spin_once(timeout_sec=1.0)
     
-    def start(self):
-        """Start all control threads"""
-        self.balance_thread.start()
-        self.walk_thread.start()
-        self.perception_thread.start()
+    metrics = validator_node.get_validation_metrics()
     
-    def stop(self):
-        """Stop all control threads"""
-        self.running = False
-        self.balance_thread.join()
-        self.walk_thread.join()
-        self.perception_thread.join()
-
-
-# Example usage
-if __name__ == "__main__":
-    controller = RealTimeBipedalController()
-    controller.start()
+    validator_node.destroy_node()
+    rclpy.shutdown()
     
-    try:
-        # Let it run for some time
-        time.sleep(10)
-    except KeyboardInterrupt:
-        print("Stopping controller...")
-    finally:
-        controller.stop()
-```
+    return metrics
 
-## Chapter Summary
 
-This chapter covered advanced AI techniques for robotic manipulation and bipedal locomotion. We explored deep learning and reinforcement learning approaches for grasping and object manipulation, model predictive control and deep RL for bipedal walking, and techniques for integrating perception with action. These AI-powered approaches enable robots to perform complex tasks with greater adaptability and robustness compared to traditional model-based methods.
-
-## Checklist
-
-- [ ] Implement deep learning for robotic grasping
-- [ ] Apply reinforcement learning to manipulation tasks
-- [ ] Set up MPC for bipedal locomotion control
-- [ ] Develop deep RL for walking gaits
-- [ ] Integrate perception and action systems
-- [ ] Validate AI-powered systems with appropriate metrics
-- [ ] Optimize algorithms for real-time operation
-
-## Exercises
-
-### Exercise 1: Grasp Planning with Deep Learning
-
-Create a deep learning system that predicts good grasp positions on objects.
-
-#### Solution
-
-1. Set up a dataset of object images with grasp annotations
-2. Implement a CNN for grasp detection
-3. Train the network on the dataset
-4. Test on new objects in simulation
-5. Integrate with robot control system
-
-#### Hints
-
-- Use RGB-D images for richer information
-- Consider multiple grasps for each object
-- Implement data augmentation for better generalization
-
-### Exercise 2: Stable Walking with MPC
-
-Implement an MPC-based controller for stable bipedal walking.
-
-#### Solution
-
-1. Model the robot as a linear inverted pendulum
-2. Implement ZMP-based MPC controller
-3. Tune controller parameters for stability
-4. Test on simulated humanoid robot
-5. Evaluate walking speed and stability
-
-#### Hints
-
-- Consider step timing as well as step placement
-- Add constraints for foot placement within support polygon
-- Test on various terrain conditions
-
-## References
-
-- [Deep Learning for Robotics by Wurm et al.](https://arxiv.org/abs/1804.00495)
-- [Reinforcement Learning in Robotics: A Survey](https://arxiv.org/abs/1509.02650)
-- [Model Predictive Control for Bipedal Locomotion](https://ieeexplore.ieee.org/document/7472884)
-- [Robot Learning from Demonstration: A Survey](https://www.annualreviews.org/doi/10.1146/annurev-control-061520-015047)
+if __name__ == '__main__':
+    validation_result = run_validation_suite()
+    print("\nValidation complete!")

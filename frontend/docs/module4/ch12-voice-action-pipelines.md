@@ -1101,7 +1101,7 @@ class ActionPlannerNode(Node):
         
         # Wait for the duration
         start_time = self.get_clock().now()
-        while (self.get_clock().now() - start_time).nanoseconds < duration * 1e9:
+        while (self.get_clock().now() - start_time).nanoseconds &lt; duration * 1e9:
             rclpy.spin_once(self, timeout_sec=0.1)
         
         # Stop the robot
@@ -1206,7 +1206,7 @@ class InteractionContext:
     
     def is_context_valid(self) -> bool:
         """Check if context is still valid (not timed out)"""
-        return (time.time() - self.last_interaction_time) < self.context_timeout
+        return (time.time() - self.last_interaction_time) &lt; self.context_timeout
 
 
 class ContextAwareNLU:
@@ -1318,7 +1318,7 @@ class VoiceInterfaceErrorHandler:
     
     def handle_nlu_error(self, command: str, recognized_intent: RobotIntent = None):
         """Handle natural language understanding errors"""
-        if recognized_intent and recognized_intent.confidence < 0.3:
+        if recognized_intent and recognized_intent.confidence &lt; 0.3:
             return f"I'm not sure what you mean by '{command}'. Could you rephrase that?"
         elif recognized_intent is None or recognized_intent.action == 'unknown':
             return f"I don't know how to '{command}'. Here are some things I can do: move, turn, pick up, go to, find."
