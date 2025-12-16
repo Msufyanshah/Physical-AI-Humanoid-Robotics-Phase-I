@@ -92,7 +92,7 @@ We have successfully implemented a complete architecture that integrates:
 
 After implementing and testing the complete system, we achieved the following performance characteristics:
 
-- **Response Time**: <2 seconds for voice-to-action pipeline
+- **Response Time**: &lt;2 seconds for voice-to-action pipeline
 - **Accuracy**: >90% for content-based questions in RAG system
 - **Stability**: 95% uptime during extended operation
 - **Scalability**: Supports up to 100 concurrent users
@@ -363,8 +363,8 @@ Our system was evaluated against standard benchmarks:
 - **Object Detection Accuracy**: 92% for trained object categories
 - **Grasp Success Rate**: 87% for appropriate objects
 - **Voice Understanding Accuracy**: 90% for clear commands
-- **System Response Time**: <1.5 seconds average
-- **Hallucination Rate (RAG)**: <2% in responses
+- **System Response Time**: &lt;1.5 seconds average
+- **Hallucination Rate (RAG)**: &lt;2% in responses
 
 ### Quality Metrics Achieved
 
