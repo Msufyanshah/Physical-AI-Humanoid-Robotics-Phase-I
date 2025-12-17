@@ -5,6 +5,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import HomepageFeatures from '@site/src/components/HomepageFeatures';
 import Heading from '@theme/Heading';
+import RagChatbot from '@site/src/components/RagChatbot';
 
 import styles from './index.module.css';
 
@@ -38,6 +39,15 @@ export default function Home(): ReactNode {
       <HomepageHeader />
       <main>
         <HomepageFeatures />
+        <section style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+          <div className="container">
+            <div className="row">
+              <div className="col col--12">
+                <RagChatbot />
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </Layout>
   );
