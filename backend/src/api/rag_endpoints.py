@@ -6,6 +6,8 @@ import asyncio
 from ..services.chat_service import ChatService
 from ..services.embedding_service import EmbeddingService
 from ..services.retrieval_service import RetrievalService
+from ..rag.agent_adapter import run_agent
+from ..agent_builder.runners import triage_runner, ros_runner, gazebo_runner, isaac_runner, vla_runner
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +20,10 @@ rag_app = APIRouter(prefix="/rag", tags=["rag"])
 chat_service = ChatService()
 embedding_service = EmbeddingService()
 retrieval_service = RetrievalService()
+
+class AgentQuestionRequest(BaseModel):
+    question: str
+    user_level: str  # "v0" or "v1"
 
 
 # Request/Response Models
@@ -217,3 +223,47 @@ async def login():
 
 # End of API router definitions
 # This router is meant to be included in the main application
+
+
+@rag_app.post("/ask-agent")
+def ask_agent(request: AgentQuestionRequest):
+    """
+    Agent-based RAG with prompt versioning (v0 / v1)
+    """
+
+    try:
+        # 1. Triage
+        triage_result = triage_runner.run(input=request.question)
+        agent_name = triage_result.output_text
+
+        if not agent_name:
+            raise HTTPException(status_code=500, detail="Triage failed")
+
+        # 2. Resolve agent runner from the imported modules
+        agent_runners = {
+            "ros": ros_runner,
+            "gazebo": gazebo_runner,
+            "isaac": isaac_runner,
+            "vla": vla_runner
+        }
+
+        agent_runner = agent_runners.get(agent_name)
+        if agent_runner is None:
+            raise HTTPException(status_code=500, detail=f"Unknown agent: {agent_name}")
+
+        # 3. Run agent
+        answer = run_agent(
+            agent_runner=agent_runner,
+            agent_name=agent_name,
+            question=request.question,
+            user_level=request.user_level,
+        )
+
+        return {
+            "agent": agent_name,
+            "level": request.user_level,
+            "answer": answer,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
