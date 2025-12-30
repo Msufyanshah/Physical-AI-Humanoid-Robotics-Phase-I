@@ -1,8 +1,6 @@
 # Physical AI & Humanoid Robotics: Complete Autonomous System
 
-## Project Status: ✅ COMPLETE
-
-This repository contains a **COMPLETE** implementation of an autonomous humanoid robot system with integrated documentation and RAG chatbot functionality. The project successfully implements all four modules as specified in the original requirements.
+This repository contains a complete autonomous humanoid robot pipeline that integrates perception, planning, control, and natural language understanding. The system implements a Docusaurus-based book with an integrated RAG chatbot for interacting with the content.
 
 ## Architecture Overview
 
@@ -13,32 +11,6 @@ The system consists of:
 3. **Perception**: Computer vision and sensing modules
 4. **Planning**: Cognitive planning for action synthesis from natural language
 5. **Control**: Low-level motion and navigation controllers
-
-## Key Features Delivered
-
-### ✅ Four Complete Learning Modules
-- Module 1: The Robotic Nervous System (ROS 2) - Complete with chapters and exercises
-- Module 2: The Digital Twin (Gazebo & Unity) - Complete with simulation environments
-- Module 3: The AI-Robot Brain (NVIDIA Isaac) - Complete with perception and planning systems
-- Module 4: Vision-Language-Action (VLA) - Complete with voice interface and cognitive planning
-
-### ✅ AI-Powered Components
-- Whisper-based speech recognition
-- Large Language Model integration for natural language understanding
-- Retrieval-Augmented Generation (RAG) for contextual responses
-- Computer vision for object detection and scene understanding
-
-### ✅ Robotics Infrastructure
-- ROS 2 ecosystem integration
-- Physics simulation with realistic parameters
-- Multi-sensor fusion (LiDAR, IMU, cameras, etc.)
-- Motion planning and control systems
-
-### ✅ Educational Content
-- Comprehensive documentation with learning objectives
-- Hands-on exercises with solutions
-- Code examples with proper explanations
-- Real-world applications and use cases
 
 ## Prerequisites
 
@@ -81,8 +53,9 @@ npm run build
 
 ### 4. Environment Configuration
 
-Create a `.env` file with the following environment variables:
+Create a `.env` file in the `backend/` directory with the following environment variables:
 
+**Backend (.env in backend/ directory):**
 ```env
 # Backend Environment Variables
 QDRANT_API_KEY=your_qdrant_api_key
@@ -90,12 +63,17 @@ QDRANT_URL=your_qdrant_cluster_url
 DATABASE_URL=postgresql://user:password@host:port/dbname
 OPENAI_API_KEY=your_openai_api_key
 SECRET_KEY=your_secret_key
+```
 
+**Frontend (.env in frontend/ directory):**
+```env
 # Frontend Environment Variables
 REACT_APP_API_URL=http://localhost:8000
 REACT_APP_CHATBOT_ENABLED=true
 REACT_APP_SITE_URL=http://localhost:3000
 ```
+
+Use the provided .env.example files as templates for both the backend and frontend directories.
 
 ## Running the System
 
@@ -124,7 +102,7 @@ Once both services are running:
 1. Navigate to `http://localhost:3000` to access the book
 2. Use the chatbot widget to ask questions about the book content
 3. Try commands like:
-   - "Tell me about ROS 2 architecture" 
+   - "Tell me about ROS 2 architecture"
    - "How do I create a publisher in ROS 2?"
    - "What's the difference between topics and services?"
 
@@ -150,21 +128,15 @@ Once both services are running:
 - Interfaces with robot hardware
 - Maintains stability and safety
 
-## Development
+## Agent Builder Integration
 
-### Adding New Content
+The system utilizes an agent builder workflow with the ID: `wf_693e80c4d9ec819095941b5c6ccb12e40204aab5616c9e64`
 
-1. Create new markdown files in `frontend/docs/moduleX/`
-2. Update `frontend/sidebars.js` with the new content
-3. Rebuild the frontend with `npm run build`
-
-### Extending Functionality
-
-The system is designed with modularity in mind. New capabilities can be added by:
-
-1. Creating new API endpoints in the backend
-2. Adding new React components in the frontend
-3. Updating the cognitive planner to recognize new intent types
+This workflow manages:
+- Multi-level prompting (v0 for beginners, v1 for experts)
+- Specialized agents for different domains (ROS, Gazebo, Isaac, VLA)
+- Intelligent triage of user queries
+- Context-aware response generation
 
 ## API Endpoints
 
@@ -176,6 +148,22 @@ The backend provides the following REST API:
 - `POST /api/v1/translate-urdu`: Translate content to Urdu
 - `POST /api/v1/personalize-content`: Get personalized content
 - `GET /api/v1/health`: Health check endpoint
+- `POST /api/v1/ask-agent`: Agent-based RAG with prompt versioning
+
+## Chat Interface
+
+The system includes both a web interface and a command-line interface:
+
+### Web Interface
+Access through the Docusaurus site at the main page, which includes an integrated chatbot widget.
+
+### Command-Line Interface
+```bash
+cd cli
+python run_chat.py
+```
+
+This provides a command-line interface to test the chat functionality directly.
 
 ## Troubleshooting
 
@@ -191,17 +179,9 @@ The backend provides the following REST API:
 2. Check frontend: Navigate to `http://localhost:3000` in your browser
 3. Verify API connectivity: Ensure frontend can reach backend API
 
-## Performance Optimization
-
-For optimal performance:
-- Use a GPU for running more complex models
-- Optimize vector database queries
-- Cache frequently accessed content
-- Implement proper logging and monitoring
-
 ## Contributing
 
-Contributions are welcome! Please submit issues and pull requests through the GitHub repository.
+This project follows the Spec-Kit methodology for AI-assisted development. All changes should go through the proper specification → task → implementation → validation workflow.
 
 ## License
 

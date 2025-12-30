@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import openai
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
@@ -41,7 +44,7 @@ class ChatService:
         """
         Initialize the chat service
         """
-        self.model = "gpt-3.5-turbo"
+        self.model = "openai"
         self.client = openai_client
     
     async def get_answer_general(self, question: str, context: Optional[str] = None) -> Optional[Dict[str, Any]]:

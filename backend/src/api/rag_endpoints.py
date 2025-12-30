@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import logging
 import asyncio
-from ..services.chat_service import ChatService
-from ..services.embedding_service import EmbeddingService
-from ..services.retrieval_service import RetrievalService
-from ..rag.agent_adapter import run_agent
-from ..agent_builder.runners import triage_runner, ros_runner, gazebo_runner, isaac_runner, vla_runner
+from src.services.chat_service import ChatService
+from src.services.embedding_service import EmbeddingService
+from src.services.retrieval_service import RetrievalService
+from src.rag.agent_adapter import run_agent
+from src.api.schemas import AskAgentRequest, AskAgentResponse
+from src.agent_builder.runners import triage_runner, ros_runner, gazebo_runner, isaac_runner, vla_runner
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
@@ -20,11 +22,6 @@ rag_app = APIRouter(prefix="/rag", tags=["rag"])
 chat_service = ChatService()
 embedding_service = EmbeddingService()
 retrieval_service = RetrievalService()
-
-class AgentQuestionRequest(BaseModel):
-    question: str
-    user_level: str  # "v0" or "v1"
-
 
 # Request/Response Models
 class GeneralQuestionRequest(BaseModel):
@@ -65,7 +62,7 @@ class HealthCheckResponse(BaseModel):
 
 
 @rag_app.get("/")
-async def root():
+async def root() -> Dict[str, Any]:
     """Root endpoint with API information"""
     return {
         "message": "Welcome to the Physical AI & Humanoid Robotics RAG API",
@@ -145,21 +142,21 @@ async def embed_chunk(request: EmbedChunkRequest):
     """Embed a content chunk for RAG functionality"""
     try:
         logger.info(f"Embedding content chunk of {len(request.content)} characters")
-        
+
         # Embed the content
         result = await embedding_service.embed_chunk(
             content=request.content,
             metadata=request.metadata
         )
-        
+
         if result is None:
             raise HTTPException(status_code=500, detail="Failed to create embedding")
-        
+
         return EmbedChunkResponse(
             chunk_id=result["id"],
             embedding_status="success"
         )
-        
+
     except Exception as e:
         logger.error(f"Error in embed_chunk: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -170,16 +167,16 @@ async def translate_urdu(request: TranslationRequest):
     """Translate content to Urdu"""
     try:
         logger.info(f"Translating {len(request.content)} character(s) to Urdu")
-        
+
         # In a real implementation, this would call a translation service
         # For now, return a placeholder response
         urdu_content = "یہاں اردو میں ترجمہ ہوگا..."  # Placeholder translation
-        
+
         return {
             "translated_content": urdu_content,
             "preserve_formatting": request.preserve_formatting
         }
-        
+
     except Exception as e:
         logger.error(f"Error in translate_urdu: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -190,7 +187,7 @@ async def personalize_content(request: PersonalizationRequest):
     """Get personalized content based on user profile"""
     try:
         logger.info(f"Getting personalized content for user {request.user_id}, module {request.module_id}")
-        
+
         # In a real implementation, this would retrieve personalized content
         # based on user preferences and profile
         # For now, return a placeholder response
@@ -201,9 +198,9 @@ async def personalize_content(request: PersonalizationRequest):
                 "preferred_hardware_examples": "simulator"
             }
         }
-        
+
         return personalized_content
-        
+
     except Exception as e:
         logger.error(f"Error in personalize_content: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -221,49 +218,26 @@ async def login():
     return {"message": "Login endpoint (placeholder)"}
 
 
-# End of API router definitions
-# This router is meant to be included in the main application
-
-
-@rag_app.post("/ask-agent")
-def ask_agent(request: AgentQuestionRequest):
+@rag_app.post("/ask-agent", response_model=AskAgentResponse)
+async def ask_agent(payload: AskAgentRequest):
     """
     Agent-based RAG with prompt versioning (v0 / v1)
     """
-
     try:
-        # 1. Triage
-        triage_result = triage_runner.run(input=request.question)
-        agent_name = triage_result.output_text
-
-        if not agent_name:
-            raise HTTPException(status_code=500, detail="Triage failed")
-
-        # 2. Resolve agent runner from the imported modules
-        agent_runners = {
-            "ros": ros_runner,
-            "gazebo": gazebo_runner,
-            "isaac": isaac_runner,
-            "vla": vla_runner
-        }
-
-        agent_runner = agent_runners.get(agent_name)
-        if agent_runner is None:
-            raise HTTPException(status_code=500, detail=f"Unknown agent: {agent_name}")
-
-        # 3. Run agent
-        answer = run_agent(
-            agent_runner=agent_runner,
-            agent_name=agent_name,
-            question=request.question,
-            user_level=request.user_level,
+        # Call the run_agent function with the correct parameters
+        # The run_agent function now handles triage, agent selection, and execution internally
+        result = await run_agent(
+            question=payload.question,
+            user_level=payload.user_level,
         )
 
-        return {
-            "agent": agent_name,
-            "level": request.user_level,
-            "answer": answer,
-        }
+        return AskAgentResponse(
+            agent=result["agent"],
+            level=result["level"],
+            answer=result["answer"],
+            trace=result["trace"]
+        )
 
     except Exception as e:
+        logger.error(f"Error in ask_agent: {e}")
         raise HTTPException(status_code=500, detail=str(e))

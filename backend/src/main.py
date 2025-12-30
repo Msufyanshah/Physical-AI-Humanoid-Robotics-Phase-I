@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.api.rag_endpoints import rag_app
 from src.services.chat_service import ChatService
 from src.services.embedding_service import EmbeddingService
@@ -6,6 +7,10 @@ from src.services.retrieval_service import RetrievalService
 from src.services.vector_store_service import VectorStoreService
 from src.services.error_handling import ErrorRecoverySystem
 import logging
+from typing import Dict, List
+from dotenv import load_dotenv
+load_dotenv()
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +21,17 @@ app = FastAPI(
     title="Physical AI & Humanoid Robotics RAG API",
     description="REST API for the Physical AI & Humanoid Robotics book with integrated RAG chatbot",
     version="1.0.0"
+)
+
+# Add CORS middleware to allow frontend communication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # Expose headers for client-side access
+    expose_headers=["Access-Control-Allow-Origin"]
 )
 
 # Initialize services
@@ -41,9 +57,8 @@ except Exception as e:
 # Include the RAG router
 app.include_router(rag_app, prefix="/api/v1", tags=["rag"])
 
-# Add additional routes
 @app.get("/")
-async def root( ):
+async def root() -> Dict[str, str | List[str]]: 
     return {
         "message": "Welcome to the Physical AI & Humanoid Robotics RAG API",
         "version": "1.0.0",
@@ -55,11 +70,13 @@ async def root( ):
             "/api/v1/translate-urdu",
             "/api/v1/personalize-content",
             "/api/v1/health"
+    
         ]
     }
+    
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> Dict[str, str | Dict[str, str]]:
     """Comprehensive health check"""
     return {
         "status": "healthy",
@@ -85,3 +102,8 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+
+print("OPENAI KEY LOADED:", bool(os.getenv("OPENAI_API_KEY")))
+print("QDRANT URL:", os.getenv("QDRANT_URL"))
+    

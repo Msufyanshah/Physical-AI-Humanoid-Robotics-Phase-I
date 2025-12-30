@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from typing import List, Dict, Any, Optional
 import logging
 from qdrant_client import QdrantClient
