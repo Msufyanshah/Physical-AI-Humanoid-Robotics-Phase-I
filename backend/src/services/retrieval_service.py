@@ -27,10 +27,14 @@ class RetrievalService:
         self.qdrant_client = None
 
         qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
         if QDRANT_AVAILABLE and qdrant_url:
             try:
-                self.qdrant_client = QdrantClient(url=qdrant_url)
+                if qdrant_api_key:
+                    self.qdrant_client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+                else:
+                    self.qdrant_client = QdrantClient(url=qdrant_url)
                 self._ensure_collection()
                 logger.info("Connected to Qdrant")
             except Exception as e:
@@ -76,3 +80,58 @@ class RetrievalService:
                 )
             ]
         )
+
+    async def retrieve_relevant_chunks(self, query: str, top_k: int = 5):
+        """
+        Retrieve relevant text chunks based on a query string
+        """
+        if not self.qdrant_client:
+            logger.warning("Qdrant unavailable; returning empty results")
+            return []
+
+        try:
+            # Embed the query
+            query_vector = self.embedding_service.embed(query)
+
+            # Search in Qdrant using query_points method
+            search_results = self.qdrant_client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                limit=top_k,
+                with_payload=True
+            )
+
+            # Format results
+            formatted_results = []
+            for result in search_results.points:
+                formatted_results.append({
+                    "id": result.id,
+                    "content": result.payload.get("text", ""),
+                    "metadata": result.payload,
+                    "similarity_score": result.score
+                })
+
+            logger.info(f"Retrieved {len(formatted_results)} relevant chunks for query")
+            return formatted_results
+
+        except Exception as e:
+            logger.error(f"Error retrieving relevant chunks: {e}")
+            return []
+
+    async def retrieve_and_format_context(self, query: str, top_k: int = 5):
+        """
+        Retrieve relevant text chunks and format them for context
+        """
+        results = await self.retrieve_relevant_chunks(query, top_k)
+
+        # Format the context from the results
+        formatted_context = "\n\n".join([result["content"] for result in results])
+
+        # Extract sources
+        sources = list(set([result["metadata"].get("source", "Unknown") for result in results]))
+
+        return {
+            "formatted_context": formatted_context,
+            "sources": sources,
+            "chunks": results
+        }
