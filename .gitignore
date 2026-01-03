@@ -103,4 +103,4 @@ VolumeIcon.icns
 .coverage
 htmlcov/
 .cov/
-coverage.xml
+coverage.xml"backend/*.db" 

@@ -39,7 +39,7 @@ export default function Home(): ReactNode {
       <HomepageHeader />
       <main>
         <HomepageFeatures />
-        <section style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <section className={styles.ragChatbotSection}>
           <div className="container">
             <div className="row">
               <div className="col col--12">

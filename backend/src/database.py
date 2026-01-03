@@ -24,6 +24,9 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+# Import all models to register them with SQLAlchemy
+from src.models.user import User
+
 def get_db():
     """
     Dependency function to get database session

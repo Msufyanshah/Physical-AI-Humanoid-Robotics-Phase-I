@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Security
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import logging
@@ -10,6 +10,17 @@ from src.services.retrieval_service import RetrievalService
 from src.rag.agent_adapter import run_agent
 from src.api.schemas import AskAgentRequest, AskAgentResponse
 from src.agent_builder.runners import triage_runner, ros_runner, gazebo_runner, isaac_runner, vla_runner
+from src.utils.auth_utils import authenticate_user, create_access_token, verify_password, get_password_hash
+from src.database import get_db, User
+from src.models.database import PersonalizationSettingsDB
+from sqlalchemy.orm import Session
+from datetime import timedelta
+import uuid
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt
+from jose.jwt import JWTError
+from pydantic import BaseModel
+from src.utils.auth_utils import SECRET_KEY, ALGORITHM, TokenData, verify_token
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +70,33 @@ class PersonalizationRequest(BaseModel):
 class HealthCheckResponse(BaseModel):
     status: str
     services: Dict[str, bool]
+
+
+# Authentication Models
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    username: Optional[str] = None
+
+
+class RegisterResponse(BaseModel):
+    user_id: str
+    email: str
+    username: Optional[str] = None
+    message: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: str
+    email: str
+    username: Optional[str] = None
 
 
 @rag_app.get("/")
@@ -206,16 +244,111 @@ async def personalize_content(request: PersonalizationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@rag_app.post("/auth/register")
-async def register():
-    # Placeholder for registration - would implement with proper auth library
-    return {"message": "Registration endpoint (placeholder)"}
+@rag_app.post("/auth/register", response_model=RegisterResponse)
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    """Register a new user with email and password"""
+    try:
+        # Check if user already exists (email is required, username is optional)
+        existing_user_by_email = db.query(User).filter(User.email == request.email).first()
+        if existing_user_by_email:
+            raise HTTPException(
+                status_code=409,
+                detail="A user with this email already exists"
+            )
+
+        # Only check username if it's provided
+        if request.username:
+            existing_user_by_username = db.query(User).filter(User.username == request.username).first()
+            if existing_user_by_username:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A user with this username already exists"
+                )
+
+        # Ensure password is not longer than 72 bytes for bcrypt
+        password = request.password
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate password to 72 bytes if it's too long
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
+
+        # Hash the password
+        hashed_password = get_password_hash(password)
+
+        # Create new user
+        user_id = str(uuid.uuid4())
+        new_user = User(
+            id=user_id,
+            email=request.email,
+            username=request.username,
+            password_hash=hashed_password
+        )
+
+        # Add to database
+        db.add(new_user)
+        try:
+            db.commit()
+            db.refresh(new_user)
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error in register: {db_error}")
+            raise HTTPException(status_code=500, detail="Database error occurred")
+
+        return RegisterResponse(
+            user_id=new_user.id,
+            email=new_user.email,
+            username=new_user.username,
+            message="User registered successfully"
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error in register: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@rag_app.post("/auth/login")
-async def login():
-    # Placeholder for login - would implement with proper auth library
-    return {"message": "Login endpoint (placeholder)"}
+@rag_app.post("/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate user and return access token"""
+    try:
+        # Ensure password is not longer than 72 bytes for bcrypt
+        password = request.password
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate password to 72 bytes if it's too long
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
+
+        # Authenticate user with the validated password
+        user = authenticate_user(request.email, password, db)
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect email or password"
+            )
+
+        # Create access token
+        access_token_expires = timedelta(minutes=30)  # 30 minutes
+        access_token = create_access_token(
+            data={"sub": user.email, "user_id": user.id},
+            expires_delta=access_token_expires
+        )
+
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user_id=user.id,
+            email=user.email,
+            username=user.username
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error in login: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @rag_app.post("/ask-agent", response_model=AskAgentResponse)
@@ -241,3 +374,124 @@ async def ask_agent(payload: AskAgentRequest):
     except Exception as e:
         logger.error(f"Error in ask_agent: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Security scheme for JWT token
+security = HTTPBearer()
+
+
+# Function to get current user from JWT token
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        user_id: str = payload.get("user_id")
+        if email is None or user_id is None:
+            raise credentials_exception
+    except (JWTError, ExpiredSignatureError):
+        raise credentials_exception
+
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+# Personalization Settings Models
+class PersonalizationSettingsRequest(BaseModel):
+    experience_level: Optional[str] = "beginner"
+    preferred_hardware_examples: Optional[str] = "simulator"
+    language_preference: Optional[str] = "en"
+
+
+class PersonalizationSettingsResponse(BaseModel):
+    user_id: str
+    experience_level: Optional[str] = "beginner"
+    preferred_hardware_examples: Optional[str] = "simulator"
+    language_preference: Optional[str] = "en"
+
+
+@rag_app.get("/user/personalization", response_model=PersonalizationSettingsResponse)
+async def get_user_personalization(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's personalization settings"""
+    try:
+        # Try to get existing personalization settings
+        settings = db.query(PersonalizationSettingsDB).filter(
+            PersonalizationSettingsDB.user_id == current_user.id
+        ).first()
+
+        if not settings:
+            # Create default settings if they don't exist
+            settings = PersonalizationSettingsDB(
+                user_id=current_user.id,
+                experience_level="beginner",
+                preferred_hardware_examples="simulator",
+                language_preference="en"
+            )
+            db.add(settings)
+            db.commit()
+            db.refresh(settings)
+
+        return PersonalizationSettingsResponse(
+            user_id=settings.user_id,
+            experience_level=settings.experience_level,
+            preferred_hardware_examples=settings.preferred_hardware_examples,
+            language_preference=settings.language_preference
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting personalization settings: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@rag_app.put("/user/personalization", response_model=PersonalizationSettingsResponse)
+async def update_user_personalization(
+    request: PersonalizationSettingsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user's personalization settings"""
+    try:
+        # Try to get existing settings
+        settings = db.query(PersonalizationSettingsDB).filter(
+            PersonalizationSettingsDB.user_id == current_user.id
+        ).first()
+
+        if not settings:
+            # Create new settings if they don't exist
+            settings = PersonalizationSettingsDB(
+                user_id=current_user.id,
+                experience_level=request.experience_level,
+                preferred_hardware_examples=request.preferred_hardware_examples,
+                language_preference=request.language_preference
+            )
+            db.add(settings)
+        else:
+            # Update existing settings
+            settings.experience_level = request.experience_level
+            settings.preferred_hardware_examples = request.preferred_hardware_examples
+            settings.language_preference = request.language_preference
+
+        db.commit()
+        db.refresh(settings)
+
+        return PersonalizationSettingsResponse(
+            user_id=settings.user_id,
+            experience_level=settings.experience_level,
+            preferred_hardware_examples=settings.preferred_hardware_examples,
+            language_preference=settings.language_preference
+        )
+
+    except Exception as e:
+        logger.error(f"Error updating personalization settings: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

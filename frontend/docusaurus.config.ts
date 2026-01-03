@@ -89,6 +89,7 @@ const config: Config = {
           label: 'Book',
         },
         {to: '/blog', label: 'Blog', position: 'left'},
+        {to: '/auth', label: 'Login', position: 'right'},
         {
           href: 'https://github.com/Msufyanshah/Physical-AI-Humanoid-Robotics-Phase-I',
           label: 'GitHub',

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import react from "react";
 
 export default function RagChatbot() {
-  const [question, setQuestion] = useState("");
-  const [userLevel, setUserLevel] = useState<"v0" | "v1">("v0");
-  const [answer, setAnswer] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [question, setQuestion] = react.useState("");
+  const [userLevel, setUserLevel] = react.useState<"v0" | "v1">("v0");
+  const [answer, setAnswer] = react.useState("");
+  const [loading, setLoading] = react.useState(false);
 
   const askQuestion = async () => {
     if (!question.trim()) return;
@@ -13,12 +13,13 @@ export default function RagChatbot() {
     setAnswer("");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/ask-agent", {
+      const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiUrl}/api/v1/rag/ask-agent`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     question,
-    userLevel
+    user_level: userLevel
   })
 })
 
